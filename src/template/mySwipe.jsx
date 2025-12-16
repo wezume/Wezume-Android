@@ -1,0 +1,436 @@
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import {
+  View,
+  StyleSheet,
+  Text,
+  Linking,
+  FlatList,
+  TouchableOpacity,
+  Alert,
+  Image,
+  BackHandler,
+  Dimensions,
+  ActivityIndicator,
+  Platform,
+  StatusBar,
+} from 'react-native';
+import Video from 'react-native-video';
+import { useIsFocused, useRoute, useNavigation } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withDelay,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+// ❌ REMOVED: import PlayIcon from 'react-native-vector-icons/Ionicons';
+// ❌ REMOVED: import HeartIcon from 'react-native-vector-icons/AntDesign';
+// ❌ REMOVED: import BrokenHeartIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Share from 'react-native-share';
+import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import LinearGradient from 'react-native-linear-gradient';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import apiClient from './api';
+
+const ICON_MAP = {
+  ARROW_LEFT: 'arrow-back',
+  HEART_RED: 'favorite',
+  HEART_WHITE: 'favorite-border',
+  SHARE_ARROW: 'share',
+  PLAY: 'play-arrow',
+  PAUSE: 'pause',
+  HEART_BROKEN: 'heart-broken',
+  STOPWATCH: 'timer', // Assuming 'timer' for stopwatch
+  PHONE: 'phone',
+  EMAIL: 'email',
+};
+
+const { height: windowHeight } = Dimensions.get('window');
+
+// --- Reusable Animated Icon Button Component (Unchanged) ---
+const AnimatedIconButton = ({ onPress, children }) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const handlePressIn = () => (scale.value = withSpring(0.8));
+  const handlePressOut = () => (scale.value = withSpring(1));
+  return (
+    <Animated.View style={animatedStyle}>
+      <TouchableOpacity onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress} style={styles.iconButton}>
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+// --- Main Video Player Component ---
+const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+  const [error, setError] = useState(null);
+  const [subtitles, setSubtitles] = useState([]);
+  const [currentTime, setCurrentTime] = useState(0);
+  const { id, uri, profileImage, firstName, email, phoneNumber, thumbnail, userId: videoOwnerId } = item;
+  const navigation = useNavigation();
+
+  const [likeCount, setLikeCount] = useState(0);
+  const [totalScore, setTotalScore] = useState(0);
+
+  const playPauseOpacity = useSharedValue(0);
+  const largeLikeHeartScale = useSharedValue(0);
+  const largeLikeHeartOpacity = useSharedValue(0);
+  const dislikeHeartScale = useSharedValue(0);
+  const dislikeHeartOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (isActive) {
+      setIsLoading(true);
+      setError(null);
+      setLikeCount(0);
+      setTotalScore(0);
+      setSubtitles([]);
+
+      const fetchMetadata = async () => {
+        const results = await Promise.allSettled([
+          apiClient.get(`/api/videos/${id}/like-count`),
+          apiClient.get(`/api/totalscore/${id}`),
+          apiClient.get(`/api/videos/user/${id}/subtitles.srt`)
+        ]);
+
+        const [likeResult, scoreResult, subtitlesResult] = results;
+
+        if (likeResult.status === 'fulfilled') {
+          setLikeCount(likeResult.value.data || 0);
+        } else {
+          console.error(`Failed to fetch like count for video ${id}:`, likeResult.reason?.response?.data || likeResult.reason?.message);
+        }
+
+        if (scoreResult.status === 'fulfilled') {
+          setTotalScore(scoreResult.value.data?.totalScore || 0);
+        } else {
+          console.error(`Failed to fetch total score for video ${id}:`, scoreResult.reason?.response?.data || scoreResult.reason?.message);
+        }
+
+        if (subtitlesResult.status === 'fulfilled') {
+          setSubtitles(parseSRT(subtitlesResult.value.data));
+        } else {
+          console.error(`Failed to fetch subtitles for video ${id}:`, subtitlesResult.reason?.response?.data || subtitlesResult.reason?.message);
+        }
+      };
+
+      fetchMetadata();
+    }
+  }, [isActive, id]);
+
+  const parseSRT = (srtText) => {
+    if (!srtText || typeof srtText !== 'string') return [];
+    const subtitleBlocks = srtText.trim().replace(/\r/g, '').split('\n\n');
+    return subtitleBlocks.map(block => {
+      const lines = block.split('\n');
+      if (lines.length < 2) return null;
+      const timeString = lines[1];
+      const text = lines.slice(2).join(' ');
+      const timeParts = timeString.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+      if (!timeParts) return null;
+      const startTime = parseInt(timeParts[1]) * 3600 + parseInt(timeParts[2]) * 60 + parseInt(timeParts[3]) + parseInt(timeParts[4]) / 1000;
+      const endTime = parseInt(timeParts[5]) * 3600 + parseInt(timeParts[6]) * 60 + parseInt(timeParts[7]) + parseInt(timeParts[8]) / 1000;
+      return { startTime, endTime, text };
+    }).filter(Boolean);
+  };
+
+  const handleTogglePlay = () => {
+    setIsPaused(prev => !prev);
+    playPauseOpacity.value = withTiming(1, { duration: 200 }, () => {
+      playPauseOpacity.value = withTiming(0, { duration: 500 });
+    });
+  };
+
+  const handleLikePress = () => {
+    const wasLiked = isLiked;
+    setLikeCount(prev => prev + (wasLiked ? -1 : 1));
+    onLike(id);
+
+    if (wasLiked) {
+      // Reset and animate dislike - faster timing
+      dislikeHeartScale.value = 0;
+      dislikeHeartOpacity.value = 1;
+      dislikeHeartScale.value = withTiming(1, { duration: 280 }, (finished) => {
+        if (finished) {
+          dislikeHeartOpacity.value = withTiming(0, { duration: 280 });
+          dislikeHeartScale.value = withTiming(0, { duration: 280 });
+        }
+      });
+    } else {
+      // Reset and animate like - faster timing
+      largeLikeHeartScale.value = 0;
+      largeLikeHeartOpacity.value = 1;
+      largeLikeHeartScale.value = withTiming(1, { duration: 280 }, (finished) => {
+        if (finished) {
+          largeLikeHeartOpacity.value = withTiming(0, { duration: 280 });
+          largeLikeHeartScale.value = withTiming(0, { duration: 280 });
+        }
+      });
+    }
+  };
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onStart(() => {
+      runOnJS(handleLikePress)();
+    });
+
+  const handleVideoError = (e) => {
+    console.error('Video Error:', e);
+    setError('This video could not be played.');
+    setIsLoading(false);
+  };
+
+  const currentSubtitle = subtitles.find(sub => currentTime >= sub.startTime && currentTime <= sub.endTime)?.text || '';
+
+  const handleShare = useCallback(async () => {
+    if (!thumbnail) return Alert.alert('Error', 'Thumbnail is not available.');
+
+    const localThumbnailPath = `${RNFS.CachesDirectoryPath}/share_thumbnail_${Date.now()}.jpg`;
+
+    try {
+      await RNFS.downloadFile({ fromUrl: thumbnail, toFile: localThumbnailPath }).promise;
+      await Share.open({
+        title: 'Share User Video',
+        message: `Check out this video from ${firstName} on Wezume!`,
+        url: `file://${localThumbnailPath}`,
+      });
+    } catch (error) {
+      if (error.code !== 'ECANCELLED') {
+        Alert.alert('Error', 'Could not share the video.');
+      }
+    }
+  }, [thumbnail, firstName]);
+
+  const playPauseStyle = useAnimatedStyle(() => ({ opacity: playPauseOpacity.value }));
+
+  const animatedLikeHeartStyle = useAnimatedStyle(() => ({
+    opacity: largeLikeHeartOpacity.value,
+    transform: [{ scale: largeLikeHeartScale.value }]
+  }));
+
+  const animatedDislikeHeartStyle = useAnimatedStyle(() => ({
+    opacity: dislikeHeartOpacity.value,
+    transform: [{ scale: dislikeHeartScale.value }]
+  }));
+
+  const likeIcon = isLiked ? ICON_MAP.HEART_RED : ICON_MAP.HEART_WHITE;
+
+  return (
+    <GestureDetector gesture={doubleTapGesture}>
+      <View style={styles.page}>
+        {isLoading && isActive && !error && <ActivityIndicator style={styles.loader} color="#fff" size="large" />}
+
+        {error && isActive && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {isActive && !error ? (
+          <Video
+            source={{ uri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            paused={isPaused}
+            controls={false}
+            repeat={true}
+            onLoadStart={() => { setIsLoading(true); setError(null); }}
+            onLoad={() => setIsLoading(false)}
+            onProgress={(data) => setCurrentTime(data.currentTime)}
+            onError={handleVideoError}
+            poster={thumbnail}
+            posterResizeMode="cover"
+          />
+        ) : (
+          <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        )}
+
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleTogglePlay} activeOpacity={1} />
+
+        <Animated.View style={[styles.playPauseOverlay, playPauseStyle]}>
+          <MaterialIcons
+            name={isPaused ? ICON_MAP.PLAY : ICON_MAP.PAUSE}
+            size={100}
+            color="rgba(255, 255, 255, 0.7)"
+          />
+        </Animated.View>
+
+        {/* Like animation */}
+        <Animated.View style={[styles.heartAnimationContainer, animatedLikeHeartStyle]}>
+          <MaterialIcons name="favorite" size={220} color="#FF005E" />
+        </Animated.View>
+        {/* Dislike animation */}
+        <Animated.View style={[styles.heartAnimationContainer, animatedDislikeHeartStyle]}>
+          <MaterialIcons name="heart-broken" size={220} color="#666" />
+        </Animated.View>
+
+        <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.6)']} style={styles.overlay}>
+          <View style={styles.topControls}>
+            <AnimatedIconButton onPress={() => navigation.goBack()}>
+              <MaterialIcons name={ICON_MAP.ARROW_LEFT} size={28} color="#fff" />
+            </AnimatedIconButton>
+          </View>
+          <View style={styles.bottomControls}>
+            <View style={styles.leftColumn}>
+              {currentSubtitle ? (
+                <View style={styles.transcriptionContainer}>
+                  <Text style={styles.transcriptionText}>{currentSubtitle}</Text>
+                </View>
+              ) : null}
+              <View style={styles.userDetails}>
+                {profileImage && <Image source={{ uri: profileImage }} style={styles.profileImage} />}
+                <Text style={styles.userName}>{firstName}</Text>
+              </View>
+            </View>
+            <View style={styles.rightColumn}>
+              <AnimatedIconButton onPress={handleLikePress}>
+                <MaterialIcons name={likeIcon} size={28} color={isLiked ? '#FF005E' : '#fff'} />
+                <Text style={styles.iconText}>{likeCount}</Text>
+              </AnimatedIconButton>
+              <AnimatedIconButton onPress={handleShare}>
+                <MaterialIcons name={ICON_MAP.SHARE_ARROW} size={28} color="#fff" />
+              </AnimatedIconButton>
+            </View>
+          </View>
+        </LinearGradient>
+      </View>
+    </GestureDetector>
+  );
+});
+
+// --- HomeSwipe Component (Unchanged) ---
+const HomeSwipe = () => {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const isFocused = useIsFocused();
+
+  const [videos] = useState(route.params?.allvideos || []);
+  const [user, setUser] = useState({ userId: null, firstName: '' });
+  const [activeVideoIndex, setActiveVideoIndex] = useState(route.params?.index || 0);
+  const [likedStatus, setLikedStatus] = useState({});
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      const apiUserIdStr = await AsyncStorage.getItem('userId');
+      const apiFirstName = await AsyncStorage.getItem('firstName');
+      if (apiUserIdStr) {
+        const parsedUserId = parseInt(apiUserIdStr, 10);
+        setUser({ userId: parsedUserId, firstName: apiFirstName });
+        fetchLikeStatus(parsedUserId);
+      }
+    };
+    loadUserData();
+  }, []);
+
+  const fetchLikeStatus = async (userId) => {
+    try {
+      const response = await apiClient.get(`/api/videos/likes/status?userId=${userId}`);
+      setLikedStatus(response.data);
+    } catch (error) {
+      console.error('Error fetching like status:', error);
+    }
+  };
+
+  const handleLike = useCallback(async (videoId) => {
+    if (!user.userId) return;
+
+    setLikedStatus(prevLikedStatus => {
+      const isCurrentlyLiked = !!prevLikedStatus[videoId];
+      const endpoint = isCurrentlyLiked ? 'dislike' : 'like';
+
+      apiClient.post(`/api/videos/${videoId}/${endpoint}`, null, {
+        params: { userId: user.userId, firstName: user.firstName },
+      }).catch(() => {
+        Alert.alert('Error', 'Could not update like status.');
+        setLikedStatus(currentStatus => ({ ...currentStatus, [videoId]: isCurrentlyLiked }));
+      });
+
+      return { ...prevLikedStatus, [videoId]: !isCurrentlyLiked };
+    });
+  }, [user.userId, user.firstName]);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    if (viewableItems.length > 0) {
+      setActiveVideoIndex(viewableItems[0].index);
+    }
+  }).current;
+
+  const renderItem = useCallback(({ item, index }) => (
+    <VideoPlayer
+      item={item}
+      isActive={isFocused && index === activeVideoIndex}
+      onLike={handleLike}
+      isLiked={!!likedStatus[item.id]}
+    />
+  ), [isFocused, activeVideoIndex, handleLike, likedStatus]);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      navigation.goBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [navigation]);
+
+  return (
+    <View style={styles.container}>
+      <FlatList
+        data={videos}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id.toString()}
+        pagingEnabled
+        showsVerticalScrollIndicator={false}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        initialScrollIndex={route.params?.index || 0}
+        getItemLayout={(data, index) => ({
+          length: windowHeight,
+          offset: windowHeight * index,
+          index,
+        })}
+      />
+    </View>
+  );
+};
+
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000' },
+  page: { width: '100%', height: windowHeight, justifyContent: 'center', alignItems: 'center' },
+  loader: { position: 'absolute' },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, padding: 15, justifyContent: 'space-between' },
+  topControls: { flexDirection: 'row', justifyContent: 'flex-start', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 50 },
+  bottomControls: { flexDirection: 'row', alignItems: 'flex-end' },
+  leftColumn: { flex: 1, justifyContent: 'flex-end', paddingRight: 20 },
+  rightColumn: { justifyContent: 'space-around', alignItems: 'center', paddingVertical: 20, marginBottom: '30%' },
+  userDetails: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  profileImage: { width: 45, height: 45, borderRadius: 25, borderWidth: 2, borderColor: '#fff' },
+  userName: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
+  iconButton: { alignItems: 'center', paddingVertical: 10 },
+  iconText: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  errorContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  errorText: {
+    color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+    padding: 20,
+  },
+  transcriptionContainer: { backgroundColor: 'rgba(0, 0, 0, 0.5)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 10, alignSelf: 'center', marginBottom: '10%' },
+  transcriptionText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  playPauseOverlay: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+  heartAnimationContainer: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+});
+
+export default HomeSwipe;
