@@ -75,6 +75,68 @@ const Profile = () => {
     return true;
   };
 
+  // Request storage permissions specifically for document picking
+  const requestStoragePermissions = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const apiLevel = Platform.Version;
+        console.log('Android API Level:', apiLevel);
+
+        let permissionsToRequest = [];
+
+        // Android 13+ (API 33+) uses granular media permissions
+        if (apiLevel >= 33) {
+          permissionsToRequest = [
+            'android.permission.READ_MEDIA_IMAGES',
+            'android.permission.READ_MEDIA_VIDEO',
+            'android.permission.READ_MEDIA_AUDIO',
+          ];
+        } else {
+          // Android 12 and below use READ_EXTERNAL_STORAGE
+          permissionsToRequest = [
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+          ];
+        }
+
+        console.log('Requesting permissions:', permissionsToRequest);
+        const grants = await PermissionsAndroid.requestMultiple(permissionsToRequest);
+        console.log('Storage permissions result:', grants);
+
+        // Check if at least one permission was granted
+        const hasAnyPermission = Object.values(grants).some(
+          result => result === PermissionsAndroid.RESULTS.GRANTED
+        );
+
+        if (!hasAnyPermission) {
+          Alert.alert(
+            'Storage Permission Required',
+            'Please grant storage permissions to access documents.\n\nGo to Settings > Apps > vprofile > Permissions > Files and media > Allow',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  // On Android, we can't directly open app settings, but we can guide the user
+                  Alert.alert('Manual Permission', 'Please go to:\nSettings > Apps > vprofile > Permissions > Files and media > Allow');
+                }
+              }
+            ]
+          );
+          return false;
+        }
+
+        return true;
+      } catch (err) {
+        console.error('Permission request error:', err);
+        Alert.alert('Error', 'Failed to request permissions. Please grant storage permissions manually in Settings.');
+        return false;
+      }
+    }
+    return true;
+  };
+
+
   const handleVoiceRecord = async () => {
     if (!isRecording) {
       // Start recording
@@ -189,19 +251,41 @@ const Profile = () => {
 
   const pickDocument = async () => {
     try {
-      // Use pickSingle to open the native picker and copy file to app cache for reliability
-      const res = await DocumentPicker.pickSingle({
+      console.log('Opening document picker...');
+
+      // Check if we need to request storage permissions on Android
+      if (Platform.OS === 'android') {
+        const hasPermission = await requestStoragePermissions();
+        if (!hasPermission) {
+          console.log('Storage permissions denied');
+          return;
+        }
+        console.log('Storage permissions granted');
+      }
+
+
+      console.log('Calling DocumentPicker.pick...');
+
+      // Use pick with allowMultiSelection: false instead of pickSingle
+      // Remove mode parameter as it may not be supported in all versions
+      const results = await DocumentPicker.pick({
         type: [types.pdf, types.doc, types.docx, types.plainText],
+        allowMultiSelection: false,
         copyTo: 'cachesDirectory',
       });
 
-      // res should be a single picked item
+      console.log('DocumentPicker returned:', JSON.stringify(results, null, 2));
+
+      // pick returns an array, get the first item
+      const res = Array.isArray(results) ? results[0] : results;
+
       if (!res) {
         console.log('DocumentPicker returned no result');
+        Alert.alert('Info', 'No document was selected');
         return;
       }
 
-      console.log('DocumentPicker result:', res);
+      console.log('DocumentPicker result:', JSON.stringify(res, null, 2));
 
       // Prefer the copied file URI if available (fileCopyUri). Fallback to uri.
       const pickedUri = res.fileCopyUri || res.uri || null;
@@ -211,6 +295,8 @@ const Profile = () => {
         Alert.alert('Error', 'Unable to access picked file. Try again.');
         return;
       }
+
+      console.log('Picked URI:', pickedUri);
 
       // Normalize to file:// for Android if needed
       let uploadUri = pickedUri;
@@ -226,7 +312,7 @@ const Profile = () => {
         type: res.type || 'application/octet-stream',
       };
 
-      console.log('Prepared file for upload:', file);
+      console.log('Prepared file for upload:', JSON.stringify(file, null, 2));
       handleJDUpload(file);
 
     } catch (err) {
@@ -235,10 +321,17 @@ const Profile = () => {
         console.log('User cancelled file picker');
       } else {
         console.error('DocumentPicker Error:', err);
-        Alert.alert('Error', 'Failed to pick document. Check logs.');
+        console.error('Error details:', JSON.stringify(err, null, 2));
+        console.error('Error stack:', err.stack);
+        Alert.alert(
+          'Error Opening Document Picker',
+          `Failed to open document picker. Error: ${err.message || 'Unknown error'}\n\nPlease check app permissions in Settings.`
+        );
       }
     }
   };
+
+
 
 
   const handleJDUpload = async (file) => {
