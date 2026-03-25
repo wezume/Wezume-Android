@@ -6,24 +6,69 @@ import {
   Text,
   Alert,
   ActivityIndicator,
-  ScrollView,
   TouchableOpacity,
   View,
   Dimensions,
-  ImageBackground
+  Modal,
+  FlatList,
+  ImageBackground,
+  Platform,
 } from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import LinearGradient from 'react-native-linear-gradient';
-// Removed: import UploadImage from 'react-native-vector-icons/MaterialCommunityIcons';
+import UploadImage from 'react-native-vector-icons/MaterialCommunityIcons';
 import RNFS from 'react-native-fs';
 import { launchImageLibrary } from 'react-native-image-picker';
+// import FastImage from 'react-native-fast-image';
 import env from './env';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// Note: Imports for Animated, useSharedValue, Gesture, etc., are removed.
+// Other imports remain the same
+const { width, height } = Dimensions.get('window');
 
-const { width, height } = Dimensions.get('window'); // Keep Dimensions for sizing
+const SelectionModal = ({ visible, onClose, title, data, onSelect }) => {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Icon name="close" size={22} color="#333" />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={data}
+            keyExtractor={(item, index) => index.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.modalItem}
+                onPress={() => {
+                  onSelect(item);
+                  onClose();
+                }}
+              >
+                <Text style={styles.modalItemText}>{item}</Text>
+                <Icon name="chevron-right" size={20} color="#ccc" />
+              </TouchableOpacity>
+            )}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+};
+
 
 const SignupScreen = () => {
   const [firstName, setFirstName] = useState('');
@@ -53,12 +98,26 @@ const SignupScreen = () => {
   const [selectRole, setSelectRole] = useState('');
   const [iscollege, setisCollege] = useState([]);
   const [isImageUploaded, setIsImageUploaded] = useState(false); // New state for upload status
-  // showScrollIndicator state and related function removed
 
-  // Unicode Emojis
-  const UPLOAD_ICON = '⬆️'; // Up arrow emoji for upload
-  const CHEVRON_DOWN = ' \u25BC'; // Black down-pointing triangle
+  const [showRoleModal, setShowRoleModal] = useState(false);
 
+  const roleDisplayMap = {
+    'Employer': 'Recruiters',
+    'Freelancer': 'Freelancer',
+    'Employee': 'Jobseeker',
+    'Entrepreneur': 'Entrepreneur',
+    'Investor': 'Investor'
+  };
+
+  const roleValueMap = {
+    'Recruiters': 'Employer',
+    'Freelancer': 'Freelancer',
+    'Jobseeker': 'Employee',
+    'Entrepreneur': 'Entrepreneur',
+    'Investor': 'Investor'
+  };
+
+  const roleOptions = Object.keys(roleValueMap);
   const experienceOptions = [
     { label: '  0-1 years', value: '0-1' },
     { label: '  1-3 years', value: '1-3' },
@@ -68,7 +127,7 @@ const SignupScreen = () => {
     { label: '  15+ years', value: '10+' },
   ];
 
-  // Logic for ScrollIndicator removed
+
 
   const fetchColleges = async (jobRole) => {
     console.log("Fetching colleges for job role:", jobRole);
@@ -81,7 +140,7 @@ const SignupScreen = () => {
       console.log("Response:", response.data); // This should show the expected data from the API
 
       // Update the state with the fetched college data
-      setisCollege(response.data.colleges); // Assuming colleges is an array of objects
+      setisCollege(response.data.colleges || []); // Assuming colleges is an array of objects
     } catch (error) {
       if (error.response) {
         console.error("API Error:", error.response.data);
@@ -94,10 +153,8 @@ const SignupScreen = () => {
     }
   };
 
-  // REMOVED: rotateX, rotateY, translateX, translateY shared values.
-  // REMOVED: panGesture and animatedStyle logic.
 
-  // Note: animatedStyle reference is removed from the return block.
+
 
   console.log(selectedRoleCode);
   console.log(selectedCollege);
@@ -109,9 +166,9 @@ const SignupScreen = () => {
     }
   }, [selectRole]);
 
-  // const filteredColleges = iscollege.filter(college =>
-  //   college.college.toLowerCase().includes(searchText.toLowerCase()) // Access the 'college' field
-  // );
+  const filteredColleges = Array.isArray(iscollege) ? iscollege.filter(college =>
+    college.college?.toLowerCase().includes(searchText.toLowerCase()) // Access the 'college' field
+  ) : [];
 
   const cityOptions = [
     'New Delhi',
@@ -191,12 +248,10 @@ const SignupScreen = () => {
   const validateInputs = () => {
     if (
       !firstName ||
-      !lastName ||
       !email ||
       !phoneNumber ||
       !jobOption ||
-      !password ||
-      !confirmPassword
+      !password
     ) {
       Alert.alert('Validation Error', 'All fields are required!');
       return false;
@@ -208,10 +263,6 @@ const SignupScreen = () => {
       return false;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Validation Error', 'Passwords do not match!');
-      return false;
-    }
     if (phoneNumber.length !== 10) {
       Alert.alert(
         'Validation Error',
@@ -286,6 +337,8 @@ const SignupScreen = () => {
           },
         }
       );
+
+      // Success handling (rest remains the same)
       Alert.alert(
         'Success',
         'Registration successful! Please check your email for verification.',
@@ -296,12 +349,10 @@ const SignupScreen = () => {
               // ... navigation and state resets ...
               navigation.navigate('LoginScreen');
               setFirstName('');
-              setLastName('');
               setEmail('');
               setPhoneNumber('');
               setJobOption('');
               setPassword('');
-              setConfirmPassword('');
               setProfilePic(null);
               setCurrentRole('');
               setKeySkills('');
@@ -391,7 +442,8 @@ const SignupScreen = () => {
             '',
           );
           setBase64Image(cleanBase64String);
-          setIsImageUploaded(true); // Set to true when image is successfully uploaded
+          setIsImageUploaded(true);
+          setProfilePic(imageUri); // Update profilePic state for display
         } catch (error) {
           console.error('Error converting image to Base64: ', error);
           setIsImageUploaded(false); // Reset on error
@@ -400,1035 +452,403 @@ const SignupScreen = () => {
     });
   };
 
-  // REMOVED: handleScroll function
+
 
   return (
     <ImageBackground
       style={styles.backgroundImage}
       source={require('./assets/Background-01.jpg')}
       resizeMode="cover">
-      <View style={styles.glassContainer}>
-        <Image style={styles.img2} source={require('./assets/logopng.png')} />
-        <Text style={styles.title}>SignUp</Text>
-        {/* scrollView */}
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          style={{ height: '40%', width: '100%' }}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}>
-          {/* <Text style={styles.loginsub}>Create an account so you can explore all the existing jobs.</Text> */}
-          <TextInput
-            style={styles.input}
-            placeholder="Display Name"
-            placeholderTextColor="#000"
-            value={firstName}
-            onChangeText={setFirstName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Last Name"
-            placeholderTextColor="#000"
-            value={lastName}
-            onChangeText={setLastName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#000"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Phone Number"
-            placeholderTextColor="#000"
-            value={phoneNumber}
-            onChangeText={setPhoneNumber}
-            keyboardType="phone-pad"
-          />
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={jobOption}
-              style={styles.picker}
-              onValueChange={itemValue => setJobOption(itemValue)}>
-              <Picker.Item
-                style={{ fontSize: 16 }}
-                label="  Scroll to select your role"
-                value=""
-              />
-              <Picker.Item
-                style={{ fontSize: 16 }}
-                label="  Employer"
-                value="Employer"
-              />
-              <Picker.Item
-                style={{ fontSize: 16 }}
-                label="  Freelancer"
-                value="Freelancer"
-              />
-              <Picker.Item
-                style={{ fontSize: 16 }}
-                label="  Employee"
-                value="Employee"
-              />
-              <Picker.Item
-                style={{ fontSize: 16 }}
-                label="  Entrepreneur"
-                value="Entrepreneur"
-              />
-              <Picker.Item
-                style={{ fontSize: 16 }}
-                label="  Investor"
-                value="Investor"
-              />
-            </Picker>
+      {/* <Image style={styles.img} source={require('./assets/Png-02.png')} /> */}
+      <View style={{ flex: 1 }}>
+        <View style={styles.glassContainer}>
+          <Image style={styles.img2} source={require('./assets/logopng.png')} />
+          <Text style={styles.title}>SignUp</Text>
+          <View
+            style={{ width: '100%', marginBottom: 20 }}>
+            {/* <Text style={styles.loginsub}>Create an account so you can explore all the existing jobs.</Text> */}
+
+            {/* Profile Picture Upload Section */}
+            {/* Profile Picture Upload Section (Compact) */}
+
+
+            <TextInput
+              style={styles.input}
+              placeholder="Display Name"
+              placeholderTextColor="#000"
+              value={firstName}
+              onChangeText={setFirstName}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#000"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Phone Number"
+              placeholderTextColor="#000"
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              keyboardType="phone-pad"
+            />
+            <View style={styles.inputWrapper}>
+              <TouchableOpacity
+                style={styles.pickerTouchable}
+                onPress={() => setShowRoleModal(true)}
+              >
+                <Text style={[styles.pickerText, !jobOption && { color: '#000' }]}>
+                  {jobOption ? roleDisplayMap[jobOption] : "Scroll to select your role"}
+                </Text>
+                <Icon name="chevron-down" size={20} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#000"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
           </View>
-          {/* Role-specific fields */}
-          {jobOption === 'Employee' && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#000"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm Password"
-                placeholderTextColor="#000"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Organization Name"
-                placeholderTextColor="#000"
-                value={currentEmployer}
-                onChangeText={setCurrentEmployer}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Current Role"
-                placeholderTextColor="#000"
-                value={currentRole}
-                onChangeText={setCurrentRole}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Key Skills"
-                placeholderTextColor="#000"
-                value={keySkills}
-                onChangeText={setKeySkills}
-              />
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={experience}
-                  onValueChange={itemValue => setExperience(itemValue)}
-                  style={styles.picker}>
-                  <Picker.Item label="  Select Experience" value="" />
-                  {experienceOptions.map(option => (
-                    <Picker.Item
-                      label={option.label}
-                      value={option.value}
-                      key={option.value}
-                    />
-                  ))}
-                </Picker>
-              </View>
+          {/* Loading indicator and Sign Up button */}
+          {loading ? (
+            <ActivityIndicator
+              size="large"
+              color="#0077B5"
+              style={styles.loadingIndicator}
+            />
+          ) : (
+            <LinearGradient colors={['#70bdff', '#2e80d8']} style={styles.btn}>
               <TouchableOpacity
-                onPress={toggleIndustryDropdown}
-                style={styles.dropdownButton}>
-                <Text style={styles.dropdownButtonText}>
-                  {industry || 'Select Industry'}
-                </Text>
-                {/* Replaced icon with emoji */}
-                <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
+                style={styles.signupButton}
+                onPress={handleSignup}>
+                <Text style={styles.signupButtonText}>SignUp</Text>
               </TouchableOpacity>
-
-              {/* Industry Dropdown Content */}
-              {isIndustryDropdownOpen && (
-                <View style={[styles.dropdownContainer, { maxHeight: 200 }]}>
-                  {/* Search Input */}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search industry"
-                    placeholderTextColor="#666"
-                    value={industrySearchText}
-                    onChangeText={setIndustrySearchText}
-                  />
-
-                  {/* Scrollable List of Filtered Industries */}
-                  <ScrollView
-                    style={styles.scrollView}
-                    nestedScrollEnabled={true}>
-                    {filteredIndustries.length > 0 ? (
-                      filteredIndustries
-                        .sort((a, b) => a.localeCompare(b))
-                        .map(industryName => (
-                          <TouchableOpacity
-                            key={industryName}
-                            onPress={() => selectIndustry(industryName)}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>
-                              {industryName}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => selectIndustry('Others')}
-                        style={styles.dropdownOption}>
-                        <Text style={styles.dropdownOptionText}>Others</Text>
-                      </TouchableOpacity>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              <TouchableOpacity
-                onPress={toggleDropdown}
-                style={styles.dropdownButton}>
-                <Text style={styles.dropdownButtonText}>
-                  {city || 'Select City'}
-                </Text>
-                {/* Replaced icon with emoji */}
-                <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-              </TouchableOpacity>
-
-              {/* Dropdown Content */}
-              {isDropdownOpen && (
-                <View style={styles.dropdownContainer}>
-                  {/* Search Input */}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search city"
-                    placeholderTextColor="#666"
-                    value={searchText}
-                    onChangeText={setSearchText}
-                  />
-
-                  {/* Scrollable List of Filtered Cities */}
-                  <ScrollView
-                    style={styles.scrollView}
-                    nestedScrollEnabled={true}>
-                    {filteredCities.length > 0 ? (
-                      // Display filtered cities in alphabetical order
-                      filteredCities
-                        .sort((a, b) => a.localeCompare(b))
-                        .map(cityName => (
-                          <TouchableOpacity
-                            key={cityName}
-                            onPress={() => selectCity(cityName)}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>
-                              {cityName}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                    ) : (
-                      <>
-                        {/* "Others" option */}
-                        <TouchableOpacity
-                          onPress={() => selectCity('Others')}
-                          style={styles.dropdownOption}>
-                          <Text style={styles.dropdownOptionText}>Others</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-            </>
-          )}
-          {/* Role-specific fields */}
-          {jobOption === 'Freelancer' && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#000"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm Password"
-                placeholderTextColor="#000"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Organization Name"
-                placeholderTextColor="#000"
-                value={currentEmployer}
-                onChangeText={setCurrentEmployer}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Current Role"
-                placeholderTextColor="#000"
-                value={currentRole}
-                onChangeText={setCurrentRole}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Key Skills"
-                placeholderTextColor="#000"
-                value={keySkills}
-                onChangeText={setKeySkills}
-              />
-              <Picker
-                selectedValue={experience}
-                onValueChange={itemValue => setExperience(itemValue)}
-                style={styles.picker}>
-                <Picker.Item label="  Select Experience" value="" />
-                {experienceOptions.map(option => (
-                  <Picker.Item
-                    label={option.label}
-                    value={option.value}
-                    key={option.value}
-                  />
-                ))}
-              </Picker>
-              <TouchableOpacity
-                onPress={toggleIndustryDropdown}
-                style={styles.dropdownButton}>
-                <Text style={styles.dropdownButtonText}>
-                  {industry || 'Select Industry'}
-                </Text>
-                {/* Replaced icon with emoji */}
-                <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-              </TouchableOpacity>
-
-              {/* Industry Dropdown Content */}
-              {isIndustryDropdownOpen && (
-                <View style={[styles.dropdownContainer, { maxHeight: 200 }]}>
-                  {/* Search Input */}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search industry"
-                    placeholderTextColor="#666"
-                    value={industrySearchText}
-                    onChangeText={setIndustrySearchText}
-                  />
-
-                  {/* Scrollable List of Filtered Industries */}
-                  <ScrollView
-                    style={styles.scrollView}
-                    nestedScrollEnabled={true}>
-                    {filteredIndustries.length > 0 ? (
-                      filteredIndustries
-                        .sort((a, b) => a.localeCompare(b))
-                        .map(industryName => (
-                          <TouchableOpacity
-                            key={industryName}
-                            onPress={() => selectIndustry(industryName)}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>
-                              {industryName}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => selectIndustry('Others')}
-                        style={styles.dropdownOption}>
-                        <Text style={styles.dropdownOptionText}>Others</Text>
-                      </TouchableOpacity>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              <TouchableOpacity
-                onPress={toggleDropdown}
-                style={styles.dropdownButton}>
-                <Text style={styles.dropdownButtonText}>
-                  {city || 'Select City'}
-                </Text>
-                {/* Replaced icon with emoji */}
-                <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-              </TouchableOpacity>
-
-              {/* Dropdown Content */}
-              {isDropdownOpen && (
-                <View style={styles.dropdownContainer}>
-                  {/* Search Input */}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search city"
-                    placeholderTextColor="#666"
-                    value={searchText}
-                    onChangeText={setSearchText}
-                  />
-
-                  {/* Scrollable List of Filtered Cities */}
-                  <ScrollView
-                    style={styles.scrollView}
-                    nestedScrollEnabled={true}>
-                    {filteredCities.length > 0 ? (
-                      // Display filtered cities in alphabetical order
-                      filteredCities
-                        .sort((a, b) => a.localeCompare(b))
-                        .map(cityName => (
-                          <TouchableOpacity
-                            key={cityName}
-                            onPress={() => selectCity(cityName)}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>
-                              {cityName}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                    ) : (
-                      <>
-                        {/* "Others" option */}
-                        <TouchableOpacity
-                          onPress={() => selectCity('Others')}
-                          style={styles.dropdownOption}>
-                          <Text style={styles.dropdownOptionText}>Others</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-            </>
-          )}
-          {jobOption === 'Entrepreneur' && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#000"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm Password"
-                placeholderTextColor="#000"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Organization Name"
-                placeholderTextColor="#000"
-                value={currentEmployer}
-                onChangeText={setCurrentEmployer}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Current Role"
-                placeholderTextColor="#000"
-                value={currentRole}
-                onChangeText={setCurrentRole}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Key Skills"
-                placeholderTextColor="#000"
-                value={keySkills}
-                onChangeText={setKeySkills}
-              />
-              <TouchableOpacity
-                onPress={toggleIndustryDropdown}
-                style={styles.dropdownButton}>
-                <Text style={styles.dropdownButtonText}>
-                  {industry || 'Select Industry'}
-                </Text>
-                {/* Replaced icon with emoji */}
-                <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-              </TouchableOpacity>
-
-              {/* Industry Dropdown Content */}
-              {isIndustryDropdownOpen && (
-                <View style={[styles.dropdownContainer, { maxHeight: 200 }]}>
-                  {/* Search Input */}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search industry"
-                    placeholderTextColor="#666"
-                    value={industrySearchText}
-                    onChangeText={setIndustrySearchText}
-                  />
-
-                  {/* Scrollable List of Filtered Industries */}
-                  <ScrollView
-                    style={styles.scrollView}
-                    nestedScrollEnabled={true}>
-                    {filteredIndustries.length > 0 ? (
-                      filteredIndustries
-                        .sort((a, b) => a.localeCompare(b))
-                        .map(industryName => (
-                          <TouchableOpacity
-                            key={industryName}
-                            onPress={() => selectIndustry(industryName)}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>
-                              {industryName}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => selectIndustry('Others')}
-                        style={styles.dropdownOption}>
-                        <Text style={styles.dropdownOptionText}>Others</Text>
-                      </TouchableOpacity>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              <TouchableOpacity
-                onPress={toggleDropdown}
-                style={styles.dropdownButton}>
-                <Text style={styles.dropdownButtonText}>
-                  {city || 'Select City'}
-                </Text>
-                {/* Replaced icon with emoji */}
-                <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-              </TouchableOpacity>
-
-              {/* Dropdown Content */}
-              {isDropdownOpen && (
-                <View style={styles.dropdownContainer}>
-                  {/* Search Input */}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search city"
-                    placeholderTextColor="#666"
-                    value={searchText}
-                    onChangeText={setSearchText}
-                  />
-
-                  {/* Scrollable List of Filtered Cities */}
-                  <ScrollView
-                    style={styles.scrollView}
-                    nestedScrollEnabled={true}>
-                    {filteredCities.length > 0 ? (
-                      // Display filtered cities in alphabetical order
-                      filteredCities
-                        .sort((a, b) => a.localeCompare(b))
-                        .map(cityName => (
-                          <TouchableOpacity
-                            key={cityName}
-                            onPress={() => selectCity(cityName)}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>
-                              {cityName}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                    ) : (
-                      <>
-                        {/* "Others" option */}
-                        <TouchableOpacity
-                          onPress={() => selectCity('Others')}
-                          style={styles.dropdownOption}>
-                          <Text style={styles.dropdownOptionText}>Others</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-            </>
-          )}
-          {/* Common fields for Employer/Investor/Academy/Placement Drive */}
-          {(jobOption === 'Employer' ||
-            jobOption === 'Investor' ||
-            selectRole === 'Academy' ||
-            selectRole === 'placementDrive') && (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="#000"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm Password"
-                  placeholderTextColor="#000"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Organization Name"
-                  placeholderTextColor="#000"
-                  value={currentEmployer}
-                  onChangeText={setCurrentEmployer}
-                />
-
-                {/* Role-specific logic for Employer/Investor/Academy/Placement Drive */}
-                {jobOption === 'Employer' && (
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Current Role"
-                    placeholderTextColor="#000"
-                    value={currentRole}
-                    onChangeText={setCurrentRole}
-                  />
-                )}
-                {jobOption === 'Investor' && (
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Investment Focus"
-                    placeholderTextColor="#000"
-                    value={keySkills}
-                    onChangeText={setKeySkills}
-                  />
-                )}
-                {(selectRole === 'Academy' ||
-                  selectRole === 'placementDrive') && (
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Academy/Placement Drive Name"
-                      placeholderTextColor="#000"
-                      value={currentEmployer}
-                      onChangeText={setCurrentEmployer}
-                    />
-                  )}
-
-                {/* Industry selection for all non-Employee roles */}
-                <TouchableOpacity
-                  onPress={toggleIndustryDropdown}
-                  style={styles.dropdownButton}>
-                  <Text style={styles.dropdownButtonText}>
-                    {industry || 'Select Industry'}
-                  </Text>
-                  {/* Replaced icon with emoji */}
-                  <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-                </TouchableOpacity>
-
-                {/* Industry Dropdown Content */}
-                {isIndustryDropdownOpen && (
-                  <View style={[styles.dropdownContainer, { maxHeight: 200 }]}>
-                    {/* Search Input */}
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search industry"
-                      placeholderTextColor="#666"
-                      value={industrySearchText}
-                      onChangeText={setIndustrySearchText}
-                    />
-
-                    {/* Scrollable List of Filtered Industries */}
-                    <ScrollView
-                      style={styles.scrollView}
-                      nestedScrollEnabled={true}>
-                      {filteredIndustries.length > 0 ? (
-                        filteredIndustries
-                          .sort((a, b) => a.localeCompare(b))
-                          .map(industryName => (
-                            <TouchableOpacity
-                              key={industryName}
-                              onPress={() => selectIndustry(industryName)}
-                              style={styles.dropdownOption}>
-                              <Text style={styles.dropdownOptionText}>
-                                {industryName}
-                              </Text>
-                            </TouchableOpacity>
-                          ))
-                      ) : (
-                        <TouchableOpacity
-                          onPress={() => selectIndustry('Others')}
-                          style={styles.dropdownOption}>
-                          <Text style={styles.dropdownOptionText}>Others</Text>
-                        </TouchableOpacity>
-                      )}
-                    </ScrollView>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  onPress={toggleDropdown}
-                  style={styles.dropdownButton}>
-                  <Text style={styles.dropdownButtonText}>
-                    {city || 'Select City'}
-                  </Text>
-                  {/* Replaced icon with emoji */}
-                  <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-                </TouchableOpacity>
-
-                {/* City Dropdown Content */}
-                {isDropdownOpen && (
-                  <View style={styles.dropdownContainer}>
-                    {/* Search Input */}
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search city"
-                      placeholderTextColor="#666"
-                      value={searchText}
-                      onChangeText={setSearchText}
-                    />
-
-                    {/* Scrollable List of Filtered Cities */}
-                    <ScrollView
-                      style={styles.scrollView}
-                      nestedScrollEnabled={true}>
-                      {filteredCities.length > 0 ? (
-                        // Display filtered cities in alphabetical order
-                        filteredCities
-                          .sort((a, b) => a.localeCompare(b))
-                          .map(cityName => (
-                            <TouchableOpacity
-                              key={cityName}
-                              onPress={() => selectCity(cityName)}
-                              style={styles.dropdownOption}>
-                              <Text style={styles.dropdownOptionText}>
-                                {cityName}
-                              </Text>
-                            </TouchableOpacity>
-                          ))
-                      ) : (
-                        <>
-                          {/* "Others" option */}
-                          <TouchableOpacity
-                            onPress={() => selectCity('Others')}
-                            style={styles.dropdownOption}>
-                            <Text style={styles.dropdownOptionText}>Others</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </ScrollView>
-                  </View>
-                )}
-                {/* Select Role for Academy/Placement Drive */}
-                {(selectRole === 'Academy' ||
-                  selectRole === 'placementDrive') && (
-                    <>
-                      <View style={styles.pickerContainer}>
-                        <Picker
-                          selectedValue={selectedRoleCode}
-                          onValueChange={itemValue =>
-                            setSelectedRoleCode(itemValue)
-                          }
-                          style={styles.picker}>
-                          <Picker.Item
-                            label="  Select Academy/Placement Role"
-                            value={null}
-                          />
-                          <Picker.Item label="  Admin" value="admin" />
-                          <Picker.Item label="  HR" value="hr" />
-                          <Picker.Item label="  Faculty" value="faculty" />
-                        </Picker>
-                      </View>
-                      {/* College Search/Dropdown for Academy/Placement Drive */}
-                      <TouchableOpacity
-                        onPress={() => setIsDropdownOpen(!isDropdownOpen)}
-                        style={styles.dropdownButton}>
-                        <Text style={styles.dropdownButtonText}>
-                          {selectedCollege || 'Select College'}
-                        </Text>
-                        {/* Replaced icon with emoji */}
-                        <Text style={styles.dropdownIcon}>{CHEVRON_DOWN}</Text>
-                      </TouchableOpacity>
-                      {/* College Dropdown Content */}
-                      {isDropdownOpen && (
-                        <View style={[styles.dropdownContainer, { maxHeight: 200 }]}>
-                          {/* Search Input */}
-                          <TextInput
-                            style={styles.searchInput}
-                            placeholder="Search College"
-                            placeholderTextColor="#666"
-                            value={searchText}
-                            onChangeText={setSearchText}
-                          />
-
-                          {/* Scrollable List of Filtered Colleges */}
-                          <ScrollView
-                            style={styles.scrollView}
-                            nestedScrollEnabled={true}>
-                            {filteredColleges.length > 0 ? (
-                              filteredColleges
-                                .sort((a, b) =>
-                                  a.college.localeCompare(b.college),
-                                )
-                                .map(college => (
-                                  <TouchableOpacity
-                                    key={college.collegeId}
-                                    onPress={() => {
-                                      setSelectedCollege(college.college);
-                                      setIsDropdownOpen(false);
-                                    }}
-                                    style={styles.dropdownOption}>
-                                    <Text style={styles.dropdownOptionText}>
-                                      {college.college}
-                                    </Text>
-                                  </TouchableOpacity>
-                                ))
-                            ) : (
-                              <TouchableOpacity
-                                onPress={() => {
-                                  setSelectedCollege('Others');
-                                  setIsDropdownOpen(false);
-                                }}
-                                style={styles.dropdownOption}>
-                                <Text style={styles.dropdownOptionText}>
-                                  Others
-                                </Text>
-                              </TouchableOpacity>
-                            )}
-                          </ScrollView>
-                        </View>
-                      )}
-                    </>
-                  )}
-              </>
-            )}
-          {/* Profile Picture Upload Section (Common) */}
-          <TouchableOpacity
-            onPress={handleProfilePic}
-            style={styles.uploadButton}>
-            <Text style={styles.uploadButtonText}>
-              {isImageUploaded ? 'Profile Picture Uploaded ' : 'Upload Profile Picture '}
-            </Text>
-            {/* Replaced icon with emoji */}
-            <Text style={styles.uploadIcon}>{isImageUploaded ? '✅' : UPLOAD_ICON}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={handleSignup}
-            disabled={loading}>
-            <LinearGradient
-              colors={['#70bdff', '#2e80d8']}
-              style={styles.gradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}>
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.loginButtonText}>SIGN UP</Text>
-              )}
             </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('LoginScreen')}
-            style={{ paddingVertical: 10 }}>
-            <Text style={styles.footerText}>
-              Already have an account? <Text style={styles.signupText}>Login</Text>
+          )}
+
+          {/* Navigation to Login Screen */}
+          <TouchableOpacity onPress={() => navigation.navigate('LoginScreen')}>
+            <Text style={styles.logAccount}>
+              Already have an account? <Text style={{ color: 'blue' }}>Login</Text>
             </Text>
           </TouchableOpacity>
-        </ScrollView>
+          <SelectionModal
+            visible={showRoleModal}
+            onClose={() => setShowRoleModal(false)}
+            title="Select Role"
+            data={roleOptions}
+            onSelect={(role) => setJobOption(roleValueMap[role])}
+          />
+        </View>
       </View>
-    </ImageBackground>
+    </ImageBackground >
   );
 };
+
 
 const styles = StyleSheet.create({
   backgroundImage: {
     flex: 1,
-    width: width,
-    height: height,
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
-    alignItems: 'center',
   },
+  // The 'glassContainer' style from the previous implementation
+  // is now correctly matched to the overall aesthetic.
   glassContainer: {
-    width: width * 0.92,
-    minHeight: height * 0.82,
-    borderRadius: 30,
+    width: '95%',
+    height: height * 0.63,
+    borderRadius: 20,
+    paddingHorizontal: 25, // Increased horizontal padding
+    paddingVertical: 30,   // Adjusted vertical padding
     overflow: 'hidden',
-    padding: 25,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.98)',
-    borderColor: 'rgba(59, 130, 246, 0.2)',
-    borderWidth: 2,
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
+    borderColor: 'rgba(255, 255, 255, 0.4)', // Slightly more visible border
+    borderWidth: 1.5,
+    backgroundColor: '#ffffff',
+    marginTop: '40%',// Light translucent background
+    alignSelf: 'center',
   },
-
+  absolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
+  },
   img2: {
-    width: 180,
-    height: 105,
-    marginBottom: -15,
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    width: 180, // Slightly wider for better visibility
+    height: 90, // Adjusted height
+    alignSelf: 'center',
+    marginBottom: 10, // More spacing
+    marginTop: -20, // Adjusted to fit within the glass container
   },
   title: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 25,
-    letterSpacing: 0.5,
-    textShadowColor: 'rgba(59, 130, 246, 0.1)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    fontSize: 26, // Slightly larger for prominence
+    fontWeight: '700', // Bolder
+    textAlign: 'center',
+    color: '#333', // Darker for better contrast on light blur
+    marginBottom: '5%', // Increased spacing
+    marginTop: '-10%',
   },
   input: {
-    backgroundColor: 'rgba(248, 250, 252, 0.9)',
-    borderWidth: 1.5,
-    padding: 15,
-    marginBottom: 14,
-    borderRadius: 15,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
-    color: '#1e293b',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)', // More opaque for better text visibility
+    borderWidth: 0.3,
+    borderColor: '#0387e0',
+    padding: 14, // Increased padding
+    marginBottom: 15, // Consistent spacing
+    borderRadius: 12, // More rounded corners
+    color: '#333', // Darker text
     fontSize: 16,
     fontWeight: '500',
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
   pickerContainer: {
-    backgroundColor: 'rgba(248, 250, 252, 0.9)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
-    marginBottom: 14,
-    borderRadius: 15,
-    overflow: 'hidden',
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderWidth: 0.3,
+    borderColor: '#0387e0',
+    marginBottom: 15,
+    borderRadius: 12, // This must match your input's borderRadius
+    overflow: 'hidden', // This is the crucial property that hides the overflowing content
   },
+
   picker: {
-    color: '#1e293b',
-    height: 55,
+    color: '#333',
+    height: 50,
     justifyContent: 'center',
+  },
+  uploadButton: {
+    backgroundColor: '#0077B5', // Original color
+    padding: 14, // Consistent padding
+    borderRadius: 12, // Consistent rounded corners
+    marginTop: 10,
+    marginBottom: 15,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  uploadButtonSuccess: {
+    backgroundColor: '#28a745', // Green for success
+  },
+  uploadButtonText: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginRight: 10, // Space between text and icon
+  },
+  loadingIndicator: {
+    paddingVertical: 15,
+    marginVertical: 10,
+  },
+  btn: {
+    width: '70%', // Wider button
+    alignSelf: 'center', // Center the button
+    borderRadius: 12, // Consistent rounded corners
+    elevation: 8, // Stronger shadow
+    marginTop: -10, // More space above
+  },
+  signupButton: {
+    paddingVertical: 14, // Consistent padding
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: -10,
+  },
+  signupButtonText: {
+    fontWeight: 'bold',
+    color: '#ffffff',
+    fontSize: 18,
+  },
+  logAccount: {
+    marginTop: 10, // More space above
+    textAlign: 'center',
+    color: '#000',
+    fontSize: 15,
     fontWeight: '600',
   },
+  // Dropdown styles (retained and slightly adjusted for consistency)
   dropdownButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    height: 50,
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    paddingVertical: 14,
     paddingHorizontal: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 12,
+    marginVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center', // Align icon vertically
+    borderColor: '#0387e0',
+    borderWidth: 0.3,
   },
   dropdownButtonText: {
-    color: '#1e293b',
+    color: '#333',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  dropdownIcon: { // New style for the emoji
-    fontSize: 18,
-    color: '#000',
+    fontWeight: '500',
   },
   dropdownContainer: {
-    width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    marginBottom: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderColor: '#ddd',
     borderWidth: 1,
-    borderColor: '#ccc',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
+    borderRadius: 10,
+    maxHeight: 180,
+    marginTop: -5,
+    marginBottom: 10,
     elevation: 3,
   },
   searchInput: {
-    height: 40,
-    paddingHorizontal: 15,
+    padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
     fontSize: 16,
-    color: '#000',
+    fontWeight: '500',
+    color: '#333',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
   },
-  scrollView: {
-    maxHeight: 150, // Limit height of the dropdown scroll list
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  dropdownOption: {
-    padding: 15,
+  modalContainer: {
+    width: '100%',
+    maxHeight: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 45,
+    marginBottom: 15,
+  },
+  modalSearchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 15,
+    color: '#333',
+  },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  dropdownOptionText: {
+  modalItemText: {
     fontSize: 16,
-    color: '#000',
+    color: '#444',
   },
-  uploadButton: {
+  inputWrapper: {
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderWidth: 0.3,
+    borderColor: '#0387e0',
+    marginBottom: 15,
+    borderRadius: 12,
+    height: 50,
+    justifyContent: 'center',
+  },
+  pickerTouchable: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: 50,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
   },
-  uploadButtonText: {
+  pickerText: {
     fontSize: 16,
-    color: '#000',
-    fontWeight: 'bold',
+    color: '#333',
+    fontWeight: '500',
   },
-  uploadIcon: { // New style for the upload emoji
-    fontSize: 20,
-    marginLeft: 5,
+  scrollView: {
+    maxHeight: 120,
   },
-  loginButton: {
+  dropdownOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#eee',
+  },
+  dropdownOptionText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '400',
+  },
+  noResultsText: {
+    textAlign: 'center',
+    color: '#888',
+    padding: 15,
+    fontSize: 15,
+  },
+
+  // Profile Picture Styles
+  // Compact Profile Picture Styles
+  compactProfileWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
     width: '100%',
-    height: 50,
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginTop: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
   },
-  gradient: {
-    flex: 1,
+  compactAvatarContainer: {
+    marginRight: 12,
+  },
+  compactAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#2e80d8',
+  },
+  compactPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#e6f2ff',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#b3d9ff',
   },
-  signupButtonText: {
-    fontWeight: '800',
-    color: '#ffffff',
-    fontSize: 19,
-    letterSpacing: 0.5,
-  },
-  footerText: {
-    color: '#000',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  signupText: {
-    color: '#2e80d8',
-    fontWeight: 'bold',
+  compactUploadText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
   },
 });
 

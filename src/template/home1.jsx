@@ -1,27 +1,38 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
-  Text, // Used for emojis
+  Text,
   ActivityIndicator,
   ImageBackground,
   Alert,
   BackHandler,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import Header from './header';
+import Header from './header'; // Assuming Header component exists
 import Video from 'react-native-video';
-// Removed: DeleteIcon, ShareIcon, UploadIcon, PlayIcon imports
+import DeleteIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import ShareIcon from 'react-native-vector-icons/Ionicons';
+import UploadIcon from 'react-native-vector-icons/Feather';
+import PlayIcon from 'react-native-vector-icons/Ionicons';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
-import apiClient from './api';
-import env from './env';
 
-// --- API Service (Remains the same) ---
+// NOTE: Replace './api' with your actual API client setup if necessary.
+import apiClient from './api';
+
+// --- Mock Environment Variables (Crucial for the share link) ---
+const env = {
+  // You MUST replace 'https://yourapi.com' with your app's actual base URL
+  baseURL: 'https://app.wezume.in',
+};
+
+// --- API Service Functions ---
 const apiService = {
   fetchVideo: (userId) => apiClient.get(`/api/videos/user/${userId}`),
   fetchSubtitles: (videoId) => apiClient.get(`/api/videos/user/${videoId}/subtitles.srt`),
@@ -31,32 +42,16 @@ const apiService = {
   getFacialScore: (videoId, videoUrl) => apiClient.get(`/api/facial-score`, { params: { videoId, url: videoUrl } }),
 };
 
-// --- Subtitle Parser (Remains the same) ---
-const parseSRT = (srtText) => {
-    if (!srtText || typeof srtText !== 'string') return [];
-    const subtitleBlocks = srtText.trim().replace(/\r/g, '').split('\n\n');
-    return subtitleBlocks.map(block => {
-      const lines = block.split('\n');
-      if (lines.length < 2) return null;
-      const timeString = lines[1];
-      const text = lines.slice(2).join(' ');
-      const timeParts = timeString.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})/);
-      if (!timeParts) return null;
-      const timeToSeconds = (h, m, s, ms) => parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(s) + parseInt(ms) / 1000;
-      const startTime = timeToSeconds(timeParts[1], timeParts[2], timeParts[3], timeParts[4]);
-      const endTime = timeToSeconds(timeParts[5], timeParts[6], timeParts[7], timeParts[8]);
-      return { startTime, endTime, text };
-    }).filter(Boolean);
-};
-
-// --- Sub-components ---
+// --- Sub-components (Kept outside to keep Home1 clean) ---
 
 const VideoPlayer = ({ videoUri, subtitles }) => {
   const videoRef = useRef(null);
   const [isPaused, setIsPaused] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
 
-  const currentSubtitle = subtitles.find(sub => currentTime >= sub.startTime && currentTime <= sub.endTime)?.text || '';
+  const currentSubtitle = useMemo(() => {
+    return subtitles.find(sub => currentTime >= sub.startTime && currentTime <= sub.endTime)?.text || '';
+  }, [currentTime, subtitles]);
 
   return (
     <TouchableOpacity style={styles.videoCard} activeOpacity={1} onPress={() => setIsPaused(!isPaused)}>
@@ -73,8 +68,7 @@ const VideoPlayer = ({ videoUri, subtitles }) => {
       />
       {isPaused && (
         <View style={styles.playPauseOverlay}>
-          {/* Replaced PlayIcon with emoji */}
-          <Text style={styles.emojiIconLarge}>▶️</Text>
+          <PlayIcon name="play-circle" size={80} color="rgba(255, 255, 255, 0.7)" />
         </View>
       )}
       {currentSubtitle ? (
@@ -87,16 +81,14 @@ const VideoPlayer = ({ videoUri, subtitles }) => {
 const ActionButtons = ({ onShare, onDelete, isDisabled }) => (
   <View style={styles.buttonContainer}>
     <TouchableOpacity style={styles.actionButton} onPress={onShare} disabled={isDisabled}>
-      {/* Replaced ShareIcon with emoji */}
-      <Text style={styles.emojiIconSmall}>🔗</Text> 
+      <ShareIcon name="share-social-outline" size={22} color="#fff" />
       <Text style={styles.actionButtonText}>Share</Text>
     </TouchableOpacity>
     <TouchableOpacity
       style={styles.actionButton}
       onPress={onDelete}
       disabled={isDisabled}>
-      {/* Replaced DeleteIcon with emoji */}
-      <Text style={styles.emojiIconSmall}>🗑️</Text>
+      <DeleteIcon name="delete-outline" size={22} color="#fff" />
       <Text style={styles.actionButtonText}>Delete</Text>
     </TouchableOpacity>
   </View>
@@ -112,55 +104,96 @@ const NoVideoContent = ({ onUploadPress }) => (
         {'\n'}• Review your transcription before uploading.
       </Text>
       <TouchableOpacity style={styles.uploadButton} onPress={onUploadPress}>
-        {/* Replaced UploadIcon with emoji */}
-        <Text style={styles.emojiIconSmallWhite}>☁️</Text>
+        <UploadIcon name="upload-cloud" size={22} color="#fff" />
         <Text style={styles.uploadButtonText}>Upload Video</Text>
       </TouchableOpacity>
     </View>
   </View>
 );
 
-// --- Main Component (Remains the same as fixed version) ---
+// ===============================================
+//          CORE COMPONENT: HOME1
+// ===============================================
 
 const Home1 = () => {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  
-  // HOOKS: All hooks defined unconditionally at the top
-  const [loading, setLoading] = useState(true);
-  const [hasVideo, setHasVideo] = useState(false);
-  const [videoUri, setVideoUri] = useState(null);
-  const [audioUri, setAudioUri] = useState(null);
-  const [videoId, setVideoId] = useState(null);
-  const [thumbnail, setThumbnail] = useState(null);
-  const [profileImage, setProfileImage] = useState(null);
-  const [userData, setUserData] = useState(null);
-  const [subtitles, setSubtitles] = useState([]);
 
-  const analysisTriggered = useRef(false);
-  
+  // --- State and Data ---
+  const [state, setState] = useState({
+    loading: true,
+    hasVideo: false,
+    videoUri: null,
+    audioUri: null,
+    videoId: null,
+    thumbnail: null,
+    profileImage: null,
+    userData: null,
+    subtitles: [],
+  });
+
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(true);
+  const demoShownRef = useRef(false);
+
+  const { loading, hasVideo, videoUri, audioUri, videoId, thumbnail, profileImage, userData, subtitles } = state;
   const userId = userData?.userId;
+  const firstName = userData?.firstName;
+  const analysisTriggered = useRef(false);
 
-  // useCallback: Perform Delete
+  /* 
+     UseCallback for fetching video to prevent recreation.
+     Modified to allow awaiting it in loadData.
+  */
+  const fetchVideoAndSubtitles = useCallback(async (currentUserId) => {
+    try {
+      const { data: videoData } = await apiService.fetchVideo(currentUserId);
+
+      // Fetch subtitles in parallel if possible, or sequentially
+      let parsedSubtitles = [];
+      try {
+        const { data: subtitlesData } = await apiService.fetchSubtitles(videoData.id);
+        parsedSubtitles = parseSRT(subtitlesData);
+      } catch (subError) {
+        // ignore subtitle error
+      }
+
+      setState(s => ({
+        ...s,
+        videoUri: videoData.videoUrl,
+        audioUri: videoData.audiourl,
+        videoId: videoData.id,
+        thumbnail: videoData.tumbnail,
+        hasVideo: true,
+        subtitles: parsedSubtitles,
+      }));
+
+      await AsyncStorage.setItem('cachedVideoData', JSON.stringify(videoData));
+
+    } catch (error) {
+      if (error.response?.status === 404) {
+        setState(s => ({ ...s, hasVideo: false, videoUri: null, videoId: null, subtitles: [] }));
+        await AsyncStorage.removeItem('cachedVideoData');
+      } else {
+        console.error('Error fetching video:', error);
+      }
+    }
+  }, []);
+
   const performDelete = useCallback(async () => {
     if (!userId) return;
     try {
       await apiService.deleteVideo(userId);
       await AsyncStorage.multiRemove(['videoId', 'cachedVideoData']);
-      
-      setHasVideo(false);
-      setVideoUri(null);
-      setVideoId(null);
-      setSubtitles([]);
-
-      navigation.reset({ index: 0, routes: [{ name: 'home1' }] });
+      setState(s => ({ ...s, hasVideo: false, videoUri: null, videoId: null, subtitles: [] }));
+      // Optional: reset navigation stack after deletion
+      // navigation.reset({ index: 0, routes: [{ name: 'Home1' }] });
     } catch (error) {
       console.error('Error deleting video:', error);
       Alert.alert('Error', 'Could not delete the video.');
     }
   }, [userId, navigation]);
 
-  // useCallback: Handle Profanity
   const handleProfanityDetected = useCallback(() => {
     Alert.alert("Profanity Detected", "This video must be deleted.",
       [{ text: 'Delete Video', onPress: performDelete, style: 'destructive' }],
@@ -168,7 +201,6 @@ const Home1 = () => {
     );
   }, [performDelete]);
 
-  // useCallback: Run Analysis
   const runAnalysis = useCallback(async () => {
     if (!videoId || !videoUri || !audioUri) return;
     try {
@@ -186,50 +218,24 @@ const Home1 = () => {
     }
   }, [videoId, videoUri, audioUri, handleProfanityDetected]);
 
-  // useCallback: Fetch Video and Subtitles
-  const fetchVideoAndSubtitles = useCallback(async (currentUserId) => {
-    if (!currentUserId) return;
-    try {
-      const { data: videoData } = await apiService.fetchVideo(currentUserId);
-      
-      setVideoUri(videoData.videoUrl);
-      setAudioUri(videoData.audiourl);
-      setVideoId(videoData.id);
-      setThumbnail(videoData.tumbnail);
-      setHasVideo(true);
+  // --- Action Handlers (Defined here to fix ReferenceError) ---
 
-      await AsyncStorage.setItem('cachedVideoData', JSON.stringify(videoData));
-
-      try {
-        const { data: subtitlesData } = await apiService.fetchSubtitles(videoData.id);
-        const parsedSubtitles = parseSRT(subtitlesData);
-        setSubtitles(parsedSubtitles);
-      } catch (subError) {
-        setSubtitles([]);
-      }
-
-    } catch (error) {
-      if (error.response?.status === 404) {
-        setHasVideo(false);
-        setVideoUri(null);
-        setVideoId(null);
-        setSubtitles([]);
-        await AsyncStorage.removeItem('cachedVideoData');
-      } else {
-        console.error('Error fetching video:', error);
-      }
-    }
-  }, []);
-
-  // useCallback: Delete Button Press
   const handleDeletePress = useCallback(() => {
     Alert.alert('Delete Video', 'Are you sure?',
       [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: performDelete }]
     );
   }, [performDelete]);
 
-  // useCallback: Share Option
-  const shareOption = useCallback(async () => {
+  /**
+   * Fixes the original ReferenceError by ensuring it's defined before JSX,
+   * using useCallback, and having necessary dependencies.
+   */
+  const handleShare = useCallback(async () => {
+    if (!thumbnail || !firstName || !videoUri || !videoId) {
+      Alert.alert('Error', 'Cannot share video at this time. Missing data.');
+      return;
+    }
+
     try {
       const thumbnailUrl = thumbnail;
       const localThumbnailPath = `${RNFS.CachesDirectoryPath}/thumbnail.jpg`;
@@ -242,38 +248,50 @@ const Home1 = () => {
       if (downloadResult.statusCode === 200) {
         const shareOptions = {
           title: 'Share User Video',
-          message: `Check out this video shared by ${userData?.firstName}\n\n${env.baseURL}/users/share?target=app://api/videos/user/${videoUri}/${videoId}`,
+          // Ensure env.baseURL is defined for a functional link
+          message: `Check out this video shared by ${firstName}\n\n${env.baseURL}/api/users/share?target=app://api/videos/user/${videoUri}/${videoId}`,
           url: `file://${localThumbnailPath}`,
         };
+
         await Share.open(shareOptions);
       } else {
+        console.error('Failed to download the thumbnail. Status code:', downloadResult.statusCode);
         Alert.alert('Error', 'Unable to download the thumbnail for sharing.');
       }
     } catch (error) {
       console.error('Error sharing video:', error);
-      Alert.alert('Error', 'Failed to prepare video for sharing.');
+      Alert.alert('Error', 'Error occurred during sharing.');
     }
-  }, [thumbnail, userData?.firstName, videoUri, videoId]);
+  }, [thumbnail, firstName, videoUri, videoId]);
 
-  // useEffect 1: Load User Data and Initial Video Fetch
+  // --- Effects ---
+
   useEffect(() => {
     const loadData = async () => {
+      setState(s => ({ ...s, loading: true }));
+      const [
+        firstName, userId, roleCode, college, profileUrl
+      ] = await AsyncStorage.multiGet(['firstName', 'userId', 'roleCode', 'college', 'profileUrl']);
+
       const storedUserData = {
-        firstName: await AsyncStorage.getItem('firstName'),
-        userId: await AsyncStorage.getItem('userId'),
-        roleCode: await AsyncStorage.getItem('roleCode'),
-        college: await AsyncStorage.getItem('college'),
+        firstName: firstName[1],
+        userId: userId[1],
+        roleCode: roleCode[1],
+        college: college[1],
       };
-      
-      const cachedProfileImage = await AsyncStorage.getItem('profileUrl');
-      
-      if (storedUserData.userId) {
-        setUserData(storedUserData);
-        setProfileImage(cachedProfileImage);
-        fetchVideoAndSubtitles(storedUserData.userId);
+
+      if (!storedUserData.userId) {
+        setState(s => ({ ...s, loading: false }));
+        return;
       }
-      
-      setLoading(false);
+      setState(s => ({
+        ...s,
+        userData: storedUserData,
+        profileImage: profileUrl[1],
+        loading: false
+      }));
+
+      fetchVideoAndSubtitles(storedUserData.userId);
     };
 
     if (isFocused) {
@@ -281,15 +299,26 @@ const Home1 = () => {
     }
   }, [isFocused, fetchVideoAndSubtitles]);
 
-  // useEffect 2: Run Analysis when video data is available and component is focused
+  useEffect(() => {
+    if (!loading && !hasVideo && !demoShownRef.current) {
+      setShowDemoModal(true);
+      demoShownRef.current = true;
+    }
+  }, [loading, hasVideo]);
+
   useEffect(() => {
     if (videoId && videoUri && audioUri && isFocused && !analysisTriggered.current) {
       analysisTriggered.current = true;
       runAnalysis();
     }
+    // Reset the trigger flag when the component loses focus
+    return () => {
+      if (!isFocused) {
+        analysisTriggered.current = false;
+      }
+    }
   }, [videoId, videoUri, audioUri, isFocused, runAnalysis]);
 
-  // useEffect 3: Hardware Back Button Handler
   useEffect(() => {
     const backAction = () => {
       if (isFocused) {
@@ -304,6 +333,8 @@ const Home1 = () => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, [isFocused]);
+
+  // --- Render ---
 
   if (loading) {
     return (
@@ -324,10 +355,9 @@ const Home1 = () => {
                 videoUri={videoUri}
                 subtitles={subtitles}
               />
-              <ActionButtons 
-                onShare={shareOption} 
-                onDelete={handleDeletePress} 
-                isDisabled={!userId} 
+              <ActionButtons
+                onShare={handleShare}
+                onDelete={handleDeletePress}
               />
             </>
           ) : (
@@ -341,11 +371,57 @@ const Home1 = () => {
               }
             />
           )}
+
+          <Modal
+            visible={showDemoModal}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowDemoModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.demoVideoContainer}>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowDemoModal(false)}
+                >
+                  <ShareIcon name="close-circle" size={35} color="#fff" />
+                </TouchableOpacity>
+
+                {demoLoading && (
+                  <ActivityIndicator
+                    size="large"
+                    color="#fff"
+                    style={styles.videoLoader}
+                  />
+                )}
+
+                <Video
+                  source={{ uri: 'https://wezume.in/wezumedemo.mp4' }}
+                  style={styles.demoVideo}
+                  resizeMode="contain"
+                  controls={true}
+                  paused={false}
+                  ignoreSilentSwitch="ignore"
+                  playInBackground={false}
+                  playWhenInactive={false}
+                  onLoad={() => setDemoLoading(false)}
+                  onError={(e) => {
+                    console.log('Video Error:', e);
+                    setDemoLoading(false);
+                  }}
+                  repeat={true}
+                  fullscreen={false}
+                />
+              </View>
+            </View>
+          </Modal>
         </View>
       </ImageBackground>
     </View>
   );
 };
+
+// --- Styles ---
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -387,11 +463,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // New style for the large play/pause emoji
-  emojiIconLarge: {
-    fontSize: 80, // Matches the size=80 from the old PlayIcon
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
   subtitle: {
     position: 'absolute',
     bottom: 20,
@@ -426,18 +497,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 10,
-  },
-  // New style for the small action emojis
-  emojiIconSmall: {
-    fontSize: 22, // Matches the size=22 from the old icons
-    color: '#fff', 
-    // Emojis often sit higher than text, so a slight adjustment might be needed:
-    // lineHeight: 22, 
-  },
-  // New style for the upload button emoji (if different color is needed)
-  emojiIconSmallWhite: {
-    fontSize: 22,
-    color: '#fff',
   },
   noVideoContainer: {
     flex: 1,
@@ -484,6 +543,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  demoVideoContainer: {
+    width: '90%',
+    height: '70%',
+    backgroundColor: '#000',
+    borderRadius: 15,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  demoVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+  },
+  videoLoader: {
+    position: 'absolute',
+    alignSelf: 'center',
+    zIndex: 5,
   },
 });
 

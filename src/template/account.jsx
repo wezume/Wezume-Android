@@ -9,37 +9,38 @@ import {
   ScrollView,
   Linking,
   ActivityIndicator,
+  Platform,
+  StatusBar,
   SafeAreaView,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import SkillsIcon from 'react-native-vector-icons/Foundation';
+import ExperienceIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import IndustryIcon from 'react-native-vector-icons/FontAwesome';
+import LocationIcon from 'react-native-vector-icons/Ionicons';
+import LanguageIcon from 'react-native-vector-icons/FontAwesome';
+import EmailIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import PhoneIcon from 'react-native-vector-icons/FontAwesome';
+import RoleIcon from 'react-native-vector-icons/MaterialIcons';
+// import RoleIcon from 'react-native-vector-icons/MaterialIcons';
+import OrgIcon from 'react-native-vector-icons/FontAwesome5';
+import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import ADIcon from 'react-native-vector-icons/AntDesign';
+import FA5Icon from 'react-native-vector-icons/FontAwesome5';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Buffer } from 'buffer';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import env from './env';
-import Header from './header';
+import Header from './header'; // Assuming Header component is in the same directory
 import apiClient from './api';
 
-// --- ICON MAPPING ---
-const ICON_MAP = {
-  // Main header
-  Like: 'thumb-up',
-  // Contact Info
-  Email: 'email',
-  Location: 'location-on',
-  // Job Specific
-  Skills: 'psychology', // Brain/Knowledge
-  Experience: 'work', // Briefcase/Work
-  Industry: 'factory', // Factory/Industry
-  Role: 'person', // Person/Role
-  Organization: 'business', // Building/Org
-};
-
 // A reusable component for each detail card
-const InfoCard = ({ title, children, iconName }) => (
+const InfoCard = ({ title, children, icon }) => (
   <View style={styles.card}>
     <View style={styles.cardHeader}>
-      <MaterialIcons name={iconName} size={24} color="#007bff" />
+      {icon}
       <Text style={styles.cardTitle}>{title}</Text>
     </View>
     <View style={styles.cardContent}>
@@ -47,6 +48,40 @@ const InfoCard = ({ title, children, iconName }) => (
     </View>
   </View>
 );
+
+const parseLinks = (rawLinks) => {
+  if (!rawLinks) return [];
+  let parsedLinks = [];
+
+  if (Array.isArray(rawLinks)) {
+    parsedLinks = rawLinks;
+  } else if (typeof rawLinks === 'string') {
+    try {
+      const jsonLinks = JSON.parse(rawLinks);
+      parsedLinks = Array.isArray(jsonLinks) ? jsonLinks : [];
+    } catch (e) {
+      if (rawLinks.trim().length > 0) {
+        const items = rawLinks.split(',');
+        parsedLinks = items.map(item => {
+          const firstColon = item.indexOf(':');
+          if (firstColon > -1) {
+            return {
+              type: item.substring(0, firstColon).trim(),
+              url: item.substring(firstColon + 1).trim()
+            };
+          }
+          return { type: 'Link', url: item.trim() };
+        });
+      }
+    }
+  }
+
+  // Normalize
+  return parsedLinks.map(link => {
+    if (typeof link === 'string') return { type: 'Link', url: link };
+    return link;
+  });
+};
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -62,24 +97,23 @@ const ProfileScreen = () => {
     try {
       const response = await apiClient.get(`/api/videos/getOwnerByUserId/${userId}`);
       const freshUserData = response.data;
+      console.log('Fetched Account Data:', freshUserData);
 
       if (freshUserData) {
-        // Update user data state
         setUserData(freshUserData);
 
-        // **Update profile image state from the API response**
-        if (freshUserData.profilePic) {
-          setProfileImage(freshUserData.profilePic);
-          // Asynchronously update the cache with the fresh data
-          await AsyncStorage.setItem('cachedProfileImage', freshUserData.profilePic);
+        // Robust check for profile image key
+        const imageFromApi = freshUserData.profilePic || freshUserData.profileUrl;
+
+        if (imageFromApi && imageFromApi !== 'null' && imageFromApi !== '') {
+          setProfileImage(imageFromApi);
+          await AsyncStorage.setItem('cachedProfileImage', imageFromApi);
         }
 
-        // Cache the latest user data
         await AsyncStorage.setItem('cachedUserData', JSON.stringify(freshUserData));
       }
     } catch (error) {
       console.error('Error fetching user details:', error);
-      // Optionally, alert the user that fresh data couldn't be loaded
     }
   };
 
@@ -94,30 +128,33 @@ const ProfileScreen = () => {
     }
   };
 
-  // This effect runs when the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       const loadProfileData = async () => {
         setLoading(true);
 
-        // --- 1. LOAD FROM CACHE for an instant UI response ---
         try {
-          const [cachedData, cachedImage] = await Promise.all([
+          // Check custom cache AND standard app-wide profileUrl
+          const [cachedData, cachedImage, standardProfileUrl] = await Promise.all([
             AsyncStorage.getItem('cachedUserData'),
-            AsyncStorage.getItem('cachedProfileImage')
+            AsyncStorage.getItem('cachedProfileImage'),
+            AsyncStorage.getItem('profileUrl')
           ]);
 
           if (cachedData) {
             setUserData(JSON.parse(cachedData));
           }
-          if (cachedImage) {
-            setProfileImage(cachedImage);
+
+          // Prioritize cachedImage, then standardProfileUrl
+          const bestAvailableImage = cachedImage || standardProfileUrl;
+          if (bestAvailableImage && bestAvailableImage !== 'null') {
+            setProfileImage(bestAvailableImage);
           }
+
         } catch (e) {
           console.error("Failed to load data from cache", e);
         }
 
-        // --- 2. FETCH FRESH DATA in the background to update UI and cache ---
         try {
           const userId = await AsyncStorage.getItem('userId');
           const videoId = await AsyncStorage.getItem('videoId');
@@ -128,21 +165,20 @@ const ProfileScreen = () => {
             return;
           }
 
-          // Fetch all fresh data in parallel
           await Promise.all([
-            fetchUserDetails(userId), // This function now handles the profile pic
+            fetchUserDetails(userId),
             videoId ? fetchLikeCount(videoId) : Promise.resolve(),
           ]);
 
         } catch (error) {
           console.error('Failed to refresh profile data from server:', error);
         } finally {
-          setLoading(false); // Stop loading after fresh data is fetched or fails
+          setLoading(false);
         }
       };
 
       loadProfileData();
-    }, [navigation]) // navigation is a stable dependency
+    }, [navigation])
   );
 
   // Opens the account deletion link
@@ -159,14 +195,14 @@ const ProfileScreen = () => {
       case 'Employee':
         return (
           <>
-            <InfoCard title="Skills" iconName={ICON_MAP.Skills}>
+            <InfoCard title="Skills" icon={<SkillsIcon name="social-skillshare" size={24} color="#3498db" />}>
               <Text style={styles.cardText}>{userData.keySkills}</Text>
             </InfoCard>
-            <InfoCard title="Experience" iconName={ICON_MAP.Experience}>
+            <InfoCard title="Experience" icon={<ExperienceIcon name="briefcase-outline" size={24} color="#2ecc71" />}>
               <Text style={styles.cardText}>{userData.experience} years</Text>
               <Text style={styles.cardSubText}>at {userData.currentEmployer}</Text>
             </InfoCard>
-            <InfoCard title="Industry" iconName={ICON_MAP.Industry}>
+            <InfoCard title="Industry" icon={<IndustryIcon name="industry" size={20} color="#e67e22" />}>
               <Text style={styles.cardText}>{userData.industry}</Text>
             </InfoCard>
           </>
@@ -175,10 +211,10 @@ const ProfileScreen = () => {
       case 'Employer':
         return (
           <>
-            <InfoCard title="Organization" iconName={ICON_MAP.Organization}>
+            <InfoCard title="Organization" icon={<OrgIcon name="building" size={20} color="#3498db" />}>
               <Text style={styles.cardText}>{userData.currentEmployer}</Text>
             </InfoCard>
-            <InfoCard title="Industry" iconName={ICON_MAP.Industry}>
+            <InfoCard title="Industry" icon={<IndustryIcon name="industry" size={20} color="#e67e22" />}>
               <Text style={styles.cardText}>{userData.industry}</Text>
             </InfoCard>
           </>
@@ -186,13 +222,13 @@ const ProfileScreen = () => {
       case 'Entrepreneur':
         return (
           <>
-            <InfoCard title="Key Skills" iconName={ICON_MAP.Skills}>
+            <InfoCard title="Key Skills" icon={<SkillsIcon name="social-skillshare" size={24} color="#3498db" />}>
               <Text style={styles.cardText}>{userData.keySkills}</Text>
             </InfoCard>
-            <InfoCard title="Current Role" iconName={ICON_MAP.Role}>
+            <InfoCard title="Current Role" icon={<RoleIcon name="person" size={24} color="#9b59b6" />}>
               <Text style={styles.cardText}>{userData.currentRole}</Text>
             </InfoCard>
-            <InfoCard title="Industry" iconName={ICON_MAP.Industry}>
+            <InfoCard title="Industry" icon={<IndustryIcon name="industry" size={20} color="#e67e22" />}>
               <Text style={styles.cardText}>{userData.industry}</Text>
             </InfoCard>
           </>
@@ -200,6 +236,43 @@ const ProfileScreen = () => {
       default:
         return null;
     }
+  };
+
+  const renderLinks = () => {
+    const links = parseLinks(userData?.links || userData?.socialLinks);
+    if (!links || links.length === 0) return null;
+
+    return (
+      <InfoCard
+        title="Links"
+        icon={<MCIcon name="link-variant" size={24} color="#333" />}
+      >
+        <View style={styles.linksContainer}>
+          {links.map((link, index) => {
+            let iconComponent = <MCIcon name="link" size={24} color="#555" />;
+            const typeLower = (link.type || '').toLowerCase();
+
+            if (typeLower.includes('linkedin')) iconComponent = <ADIcon name="linkedin-square" size={24} color="#0077b5" />;
+            else if (typeLower.includes('github')) iconComponent = <ADIcon name="github" size={24} color="#333" />;
+            else if (typeLower.includes('leetcode')) iconComponent = <MCIcon name="code-braces" size={24} color="#f89f1b" />; // LeetCode color
+            else if (typeLower.includes('blog')) iconComponent = <FA5Icon name="blog" size={20} color="#2c3e50" />;
+            else if (typeLower.includes('portfolio')) iconComponent = <MCIcon name="web" size={24} color="#27ae60" />;
+
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.linkItem}
+                onPress={() => Linking.openURL(link.url).catch(err => console.error("Couldn't open link", err))}
+              >
+                {iconComponent}
+                <Text style={styles.linkText} numberOfLines={1}>{link.type || 'Link'}</Text>
+                <MCIcon name="open-in-new" size={16} color="#999" style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </InfoCard>
+    );
   };
 
   if (loading && !userData) { // Only show full-screen loader on the very first load
@@ -222,13 +295,13 @@ const ProfileScreen = () => {
         >
           <View style={styles.overlay}>
             <Image
-              source={profileImage ? { uri: profileImage } : require('./assets/circle.png')} // Fallback image
+              source={profileImage ? { uri: profileImage } : require('./assets/headlogo.png')} // Fallback image
               style={styles.profileImage}
             />
             <Text style={styles.profileName}>{userData?.firstName} {userData?.lastName}</Text>
             <Text style={styles.jobTitle}>{userData?.industry}</Text>
             <View style={styles.likesContainer}>
-              <MaterialIcons name={ICON_MAP.Like} size={16} color="#fff" style={styles.likesIcon} />
+              <FontAwesome name="thumbs-up" size={16} color="#fff" />
               <Text style={styles.likesText}>{likeCount} Likes</Text>
             </View>
           </View>
@@ -244,26 +317,28 @@ const ProfileScreen = () => {
         </View>
 
         <View style={styles.detailsContainer}>
-          <InfoCard title="Contact Information" iconName={ICON_MAP.Email}>
+          <InfoCard title="Contact Information" icon={<EmailIcon name="email-outline" size={24} color="#e74c3c" />}>
             <Text style={styles.cardText}>{userData?.email}</Text>
             <Text style={styles.cardSubText}>{userData?.phoneNumber}</Text>
           </InfoCard>
-          <InfoCard title="Location" iconName={ICON_MAP.Location}>
+          <InfoCard title="Location" icon={<LocationIcon name="location-outline" size={24} color="#1abc9c" />}>
             <Text style={styles.cardText}>{userData?.city}</Text>
           </InfoCard>
 
           {renderJobSpecificDetails()}
+          {renderLinks()}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-// --- Styles Updated for Emojis ---
+// --- Styles remain unchanged ---
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#f4f6f9',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 25,
   },
   loadingContainer: {
     flex: 1,
@@ -318,19 +393,17 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginTop: 8,
   },
-  likesIcon: {
-    marginRight: 8,
-  },
   likesText: {
     fontSize: 13,
+    marginLeft: 8,
     color: '#fff',
     fontWeight: '600',
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    padding: 10,
-    marginTop: -20,
+    padding: 15,
+    marginTop: -30,
   },
   profileButton: {
     backgroundColor: '#fff',
@@ -380,7 +453,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
     paddingBottom: 10,
   },
-
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -398,6 +470,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#777',
     marginTop: 5,
+  },
+
+  linksContainer: {
+    marginTop: 5,
+  },
+  linkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  linkText: {
+    fontSize: 16,
+    color: '#3498db',
+    marginLeft: 15,
+    fontWeight: '500',
+    flex: 1,
   },
 });
 
