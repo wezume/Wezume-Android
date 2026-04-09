@@ -112,7 +112,9 @@ const HomeScreen = () => {
           phoneNumber: video.phonenumber || video.phoneNumber || '',
           email: video.email || '',
           thumbnail: video.thumbnail || null,
+          link: video.links || '',
         }));
+      console.log("formatted video", formattedVideos);
 
       if (currentPage === 0) {
         setVideos(formattedVideos);

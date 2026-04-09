@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import Video from 'react-native-video';
 import { useIsFocused, useRoute, useNavigation } from '@react-navigation/native';
@@ -60,11 +61,12 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
   const [error, setError] = useState(null);
   const [subtitles, setSubtitles] = useState([]);
   const [currentTime, setCurrentTime] = useState(0);
-  const { id, uri, profileImage, firstName, email, phoneNumber, thumbnail, userId: videoOwnerId } = item;
+  const { id, uri, profileImage, firstName, email, link, thumbnail, userId: videoOwnerId } = item;
   const navigation = useNavigation();
 
   const [likeCount, setLikeCount] = useState(0);
   const [totalScore, setTotalScore] = useState(0);
+  const [showLinkModal, setShowLinkModal] = useState(false);
 
   const playPauseOpacity = useSharedValue(0);
   const likeHeartScale = useSharedValue(0);
@@ -203,18 +205,20 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
     }
   }, [thumbnail, firstName]);
 
-  const handleCall = () => {
-    if (phoneNumber) {
-      const url = `tel:${phoneNumber}`;
+  const handleOpenLink = () => {
+    setShowLinkModal(true);
+  };
+
+  const handleVisitLink = () => {
+    if (link) {
+      const url = link.startsWith('http') ? link : `https://${link}`;
       Linking.canOpenURL(url).then(supported => {
         if (supported) {
           Linking.openURL(url);
         } else {
-          Alert.alert('Error', 'Phone calls are not supported on this device.');
+          Alert.alert('Error', 'Could not open this link.');
         }
       });
-    } else {
-      Alert.alert('Info', 'No phone number available for this user.');
     }
   };
 
@@ -244,7 +248,7 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
     HEART_WHITE: 'favorite-border',
     STOPWATCH: 'timer',
     SHARE_ARROW: 'share',
-    PHONE: 'phone',
+    LINK: 'link',
     EMAIL: 'email',
     PLAY: 'play-arrow',
     PAUSE: 'pause',
@@ -331,8 +335,8 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
               <AnimatedIconButton onPress={handleShare}>
                 <MaterialIcons name={ICON_MAP.SHARE_ARROW} size={28} color="#fff" />
               </AnimatedIconButton>
-              <AnimatedIconButton onPress={handleCall}>
-                <MaterialIcons name={ICON_MAP.PHONE} size={28} color="#fff" />
+              <AnimatedIconButton onPress={handleOpenLink}>
+                <MaterialIcons name={ICON_MAP.LINK} size={28} color="#fff" />
               </AnimatedIconButton>
               <AnimatedIconButton onPress={handleEmail}>
                 <MaterialIcons name={ICON_MAP.EMAIL} size={28} color="#fff" />
@@ -340,6 +344,51 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
             </View>
           </View>
         </LinearGradient>
+        {/* Links Modal */}
+        <Modal
+          visible={showLinkModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowLinkModal(false)}
+        >
+          <TouchableOpacity
+            style={styles.linkModalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowLinkModal(false)}
+          >
+            <View style={styles.linkModalContainer}>
+              <View style={styles.linkModalHandle} />
+              <Text style={styles.linkModalTitle}>🔗 Profile Links</Text>
+              {link ? (
+                link.split(',').map((entry, index) => {
+                  const colonIdx = entry.indexOf(':https');
+                  const platform = colonIdx !== -1 ? entry.substring(0, colonIdx) : entry;
+                  const url = colonIdx !== -1 ? entry.substring(colonIdx + 1) : entry;
+                  const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.linkModalItem}
+                      onPress={() => Linking.openURL(fullUrl)}
+                    >
+                      <MaterialIcons name="link" size={20} color="#0077B5" />
+                      <View style={styles.linkModalTextWrap}>
+                        <Text style={styles.linkModalPlatform}>{platform}</Text>
+                        <Text style={styles.linkModalText} numberOfLines={1}>{url}</Text>
+                      </View>
+                      <MaterialIcons name="open-in-new" size={18} color="#999" />
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={styles.linkModalEmpty}>No links added yet.</Text>
+              )}
+              <TouchableOpacity style={styles.linkModalClose} onPress={() => setShowLinkModal(false)}>
+                <Text style={styles.linkModalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </GestureDetector>
   );
@@ -471,6 +520,17 @@ const styles = StyleSheet.create({
   transcriptionText: { color: '#fff', fontSize: 16, fontWeight: '500' },
   playPauseOverlay: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
   heartAnimationContainer: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+  linkModalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  linkModalContainer: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  linkModalHandle: { width: 40, height: 4, backgroundColor: '#ddd', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  linkModalTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 16 },
+  linkModalItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, gap: 10, marginBottom: 10 },
+  linkModalTextWrap: { flex: 1 },
+  linkModalPlatform: { fontSize: 13, fontWeight: '700', color: '#333', textTransform: 'capitalize', marginBottom: 2 },
+  linkModalText: { flex: 1, fontSize: 14, color: '#0077B5', fontWeight: '500' },
+  linkModalEmpty: { fontSize: 14, color: '#999', textAlign: 'center', paddingVertical: 20 },
+  linkModalClose: { marginTop: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: '#111', alignItems: 'center' },
+  linkModalCloseText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
 export default HomeSwipe;

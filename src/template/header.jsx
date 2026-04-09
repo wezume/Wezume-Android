@@ -129,9 +129,9 @@ const Header = ({ profile, userName }) => {
     const userRole = userData.jobOption.toLowerCase();
 
     const items = [
-      createMenuItem('Tutorial', () => openLink('https://wezume.com/wezume-demo-video.mp4'), 'Tutorial'),
-      createMenuItem('FAQ', () => openLink('https://wezume.com/faq/'), 'FAQ'),
-      createMenuItem('Privacy Policy', () => openLink('https://wezume.com/privacy-policy/'), 'Privacy'),
+      // createMenuItem('Tutorial', () => openLink('https://wezume.com/wezume-demo-video.mp4'), 'Tutorial'),
+      createMenuItem('FAQ', () => openLink('https://wezume.in/faq.html'), 'FAQ'),
+      createMenuItem('Privacy Policy', () => openLink('https://wezume.in/privacypolicy.html'), 'Privacy'),
     ];
 
     const isPlacementRole = ['placementdrive', 'academy'].includes(userRole);

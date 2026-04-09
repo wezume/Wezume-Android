@@ -1,7 +1,7 @@
-import React, {useEffect, useRef} from 'react';
-import {NavigationContainer} from '@react-navigation/native';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {Linking, PermissionsAndroid, Platform} from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Linking, PermissionsAndroid, Platform } from 'react-native';
 import notifee from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -31,25 +31,26 @@ import AnalyticScreen from './src/template/Analytics.jsx';
 import FilterSwipe from './src/template/filterSwipe.jsx';
 import ScoringScreen from './src/template/scoring.jsx';
 import AppUpdateChecker from './src/template/AppUpdateChecker.jsx';
-import PlacemenntSignup from './src/template/placementSignup.jsx'; 
-import RoleSelection from './src/template/roleSelection.jsx'; 
+import PlacemenntSignup from './src/template/placementSignup.jsx';
+import RoleSelection from './src/template/roleSelection.jsx';
 import RoleSwipe from './src/template/roleSwipe.jsx';
 import RecruiterDash from './src/template/Recruiterdahs.jsx';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Test from './src/template/test.jsx';
 const Stack = createNativeStackNavigator();
 
 const App = () => {
   const navigationRef = useRef(null); // ✅ Correct way to use navigation reference
   useEffect(() => {
 
-//     const clearAsyncStorage = async () => {
-//     try {
-//         await AsyncStorage.clear();
-//         console.log("All data cleared from AsyncStorage");
-//     } catch (error) {
-//         console.error("Error clearing AsyncStorage", error);
-//     }
-// };
+    //     const clearAsyncStorage = async () => {
+    //     try {
+    //         await AsyncStorage.clear();
+    //         console.log("All data cleared from AsyncStorage");
+    //     } catch (error) {
+    //         console.error("Error clearing AsyncStorage", error);
+    //     }
+    // };
 
     /** ✅ Create notification channel */
     const createNotificationChannel = async () => {
@@ -97,7 +98,7 @@ const App = () => {
         console.error('Failed to request notification permissions:', error);
       }
     };
-// clearAsyncStorage(); // Clear AsyncStorage for testing purposes
+    // clearAsyncStorage(); // Clear AsyncStorage for testing purposes
     requestNotificationPermission();
     createNotificationChannel();
 
@@ -128,70 +129,71 @@ const App = () => {
   /** ✅ Function to handle deep link navigation */
   const handleURLNavigation = url => {
     try {
-        const route = url.replace('app://', ''); // Extract route
-        const parts = route.split('/');
+      const route = url.replace('app://', ''); // Extract route
+      const parts = route.split('/');
 
-        if (
-            parts.length >= 5 &&
-            parts[0] === 'api' &&
-            parts[1] === 'videos' &&
-            parts[2] === 'user'
-        ) {
-            const videoUrl = parts.slice(3, -1).join('/'); // Extract video URL
-            const videoId = parts[parts.length - 1]; // Extract video ID
-            console.log(`Navigating to VideoScreen with video URL: ${videoUrl} and video ID: ${videoId}`);
+      if (
+        parts.length >= 5 &&
+        parts[0] === 'api' &&
+        parts[1] === 'videos' &&
+        parts[2] === 'user'
+      ) {
+        const videoUrl = parts.slice(3, -1).join('/'); // Extract video URL
+        const videoId = parts[parts.length - 1]; // Extract video ID
+        console.log(`Navigating to VideoScreen with video URL: ${videoUrl} and video ID: ${videoId}`);
 
-            if (navigationRef.current) {
-                console.log('✅ Navigation triggered!');
-                navigationRef.current.navigate('VideoScreen', { videoUrl, videoId });
-            } else {
-                console.error('❌ Navigation reference is not initialized yet.');
-            }
+        if (navigationRef.current) {
+          console.log('✅ Navigation triggered!');
+          navigationRef.current.navigate('VideoScreen', { videoUrl, videoId });
         } else {
-            console.error('❌ URL format does not match expected pattern.');
+          console.error('❌ Navigation reference is not initialized yet.');
         }
+      } else {
+        console.error('❌ URL format does not match expected pattern.');
+      }
     } catch (error) {
-        console.error('❌ Error processing deep link:', error);
+      console.error('❌ Error processing deep link:', error);
     }
-};
+  };
 
   return (
     <>
-    <GestureHandlerRootView>
-    <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Initial" component={Initial} />
-        <Stack.Screen name="OnboardingScreen" component={OnboardingScreen} />
-        <Stack.Screen name="LoginScreen" component={LoginScreen} />
-        <Stack.Screen name="SignupScreen" component={SignupScreen} />
-        <Stack.Screen name="HomeScreen" component={HomeScreen} />
-        <Stack.Screen name="home1" component={home1} />
-        <Stack.Screen name="CameraPage" component={CameraScreen} />
-        <Stack.Screen name="profile" component={Profile} />
-        <Stack.Screen name="Transcribe" component={Transcribe} />
-        <Stack.Screen name="Account" component={Account} />
-        <Stack.Screen name="LikeScreen" component={LikeScreen} />
-        <Stack.Screen name="Filtered" component={Filtered} />
-        <Stack.Screen name="Edit" component={Edit} />
-        <Stack.Screen name="Trending" component={Trending} />
-        <Stack.Screen name="Myvideos" component={Myvideos} />
-        <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
-        <Stack.Screen name="VideoScreen" component={VideoScreen} />
-        <Stack.Screen name="HomeSwipe" component={HomeSwipe} />
-        <Stack.Screen name="MySwipe" component={MySwipe} />
-        <Stack.Screen name="FilterSwipe" component={FilterSwipe} />
-        <Stack.Screen name="TrendSwipe" component={TrendSwipe} />
-        <Stack.Screen name="LikeSwipe" component={LikeSwipe} />
-        <Stack.Screen name="ScoringScreen" component={ScoringScreen} />
-        <Stack.Screen name="AnalyticScreen" component={AnalyticScreen} />
-        <Stack.Screen name="PlacemenntSignup" component={PlacemenntSignup} />
-        <Stack.Screen name="RoleSelection" component={RoleSelection} />
-        <Stack.Screen name="RoleSwipe" component={RoleSwipe} />
-        <Stack.Screen name="RecruiterDash" component={RecruiterDash} />
-      </Stack.Navigator>
-    </NavigationContainer>
-    <AppUpdateChecker />
-    </GestureHandlerRootView>
+      <GestureHandlerRootView>
+        <NavigationContainer ref={navigationRef}>
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Initial" component={Initial} />
+            <Stack.Screen name="OnboardingScreen" component={OnboardingScreen} />
+            <Stack.Screen name="LoginScreen" component={LoginScreen} />
+            <Stack.Screen name="SignupScreen" component={SignupScreen} />
+            <Stack.Screen name="HomeScreen" component={HomeScreen} />
+            <Stack.Screen name="home1" component={home1} />
+            <Stack.Screen name="CameraPage" component={CameraScreen} />
+            <Stack.Screen name="profile" component={Profile} />
+            <Stack.Screen name="Transcribe" component={Transcribe} />
+            <Stack.Screen name="Account" component={Account} />
+            <Stack.Screen name="LikeScreen" component={LikeScreen} />
+            <Stack.Screen name="Filtered" component={Filtered} />
+            <Stack.Screen name="Edit" component={Edit} />
+            <Stack.Screen name="Trending" component={Trending} />
+            <Stack.Screen name="Myvideos" component={Myvideos} />
+            <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
+            <Stack.Screen name="VideoScreen" component={VideoScreen} />
+            <Stack.Screen name="HomeSwipe" component={HomeSwipe} />
+            <Stack.Screen name="MySwipe" component={MySwipe} />
+            <Stack.Screen name="FilterSwipe" component={FilterSwipe} />
+            <Stack.Screen name="TrendSwipe" component={TrendSwipe} />
+            <Stack.Screen name="LikeSwipe" component={LikeSwipe} />
+            <Stack.Screen name="ScoringScreen" component={ScoringScreen} />
+            <Stack.Screen name="AnalyticScreen" component={AnalyticScreen} />
+            <Stack.Screen name="PlacemenntSignup" component={PlacemenntSignup} />
+            <Stack.Screen name="RoleSelection" component={RoleSelection} />
+            <Stack.Screen name="RoleSwipe" component={RoleSwipe} />
+            <Stack.Screen name="RecruiterDash" component={RecruiterDash} />
+            <Stack.Screen name="Test" component={Test} />
+          </Stack.Navigator>
+        </NavigationContainer>
+        <AppUpdateChecker />
+      </GestureHandlerRootView>
     </>
   );
 };

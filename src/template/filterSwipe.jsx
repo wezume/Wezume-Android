@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import Video from 'react-native-video';
 import { useIsFocused, useRoute, useNavigation } from '@react-navigation/native';
@@ -21,43 +22,31 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withSpring,
-  withDelay,
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-// Removed all vector icon imports:
-// import PlayIcon from 'react-native-vector-icons/Ionicons'; 
-// import HeartIcon from 'react-native-vector-icons/AntDesign'; 
-// import BrokenHeartIcon from 'react-native-vector-icons/MaterialCommunityIcons'; 
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LinearGradient from 'react-native-linear-gradient';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import apiClient from './api';
 
 const { height: windowHeight } = Dimensions.get('window');
 
-// --- EMOJI COMPONENT AND DEFINITIONS ---
-const Emoji = ({ unicode, size = 30, color = '#fff', style }) => (
-  <Text style={[{ fontSize: size, color: color }, style]}>{unicode}</Text>
-);
-
-const EMOJI = {
-  ARROW_LEFT: '\u2b05\ufe0f',      // ⬅️ Back Arrow
-  HEART_RED: '\u2764\ufe0f',       // ❤️
-  HEART_WHITE: '\u{1F90D}',      // 🤍 (White Heart)
-  SHARE_ARROW: '\u{21AA}\ufe0f',  // ⤴️ (Upwards Arrow with Corner Leftwards - for Share)
-  PHONE: '\u260e\ufe0f',         // 📞
-  EMAIL: '\u2709\ufe0f',         // ✉️
-  SPEEDOMETER: '\u{1F3C1}',       // 🏁 (Using a flag/finish line for score/speed)
-  HEART_BROKEN: '\u{1F494}',      // 💔 (Broken Heart)
-  PLAY: '\u25b6\ufe0f',           // ▶️
-  PAUSE: '\u23f8\ufe0f',          // ⏸️
+const ICON_MAP = {
+  ARROW_LEFT: 'arrow-back',
+  HEART_RED: 'favorite',
+  HEART_WHITE: 'favorite-border',
+  SHARE_ARROW: 'share',
+  EMAIL: 'email',
+  SPEEDOMETER: 'timer',
+  HEART_BROKEN: 'heart-broken',
+  PLAY: 'play-arrow',
+  PAUSE: 'pause',
+  LINK: 'link',
 };
-// ----------------------------------------
 
-
-// --- Reusable Animated Icon Button Component (Unchanged) ---
 const AnimatedIconButton = ({ onPress, children }) => {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -72,32 +61,27 @@ const AnimatedIconButton = ({ onPress, children }) => {
   );
 };
 
-// --- Main Video Player Component ---
 const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState(null);
   const [subtitles, setSubtitles] = useState([]);
   const [currentTime, setCurrentTime] = useState(0);
-  const { id, uri, profileImage, firstName, email, phoneNumber, thumbnail, userId: videoOwnerId } = item;
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const { id, uri, profileImage, firstName, email, link, thumbnail, userId: videoOwnerId } = item;
   const navigation = useNavigation();
 
   const [likeCount, setLikeCount] = useState(0);
   const [totalScore, setTotalScore] = useState(0);
 
   const playPauseOpacity = useSharedValue(0);
-
-  // Variables for the large heart animation (Like)
   const largeLikeHeartScale = useSharedValue(0);
   const largeLikeHeartOpacity = useSharedValue(0);
-
-  // Variables for the broken heart animation (Dislike/Unlike)
   const largeDislikeHeartScale = useSharedValue(0);
   const largeDislikeHeartOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (isActive) {
-      // Reset state for the new video
       setIsLoading(true);
       setError(null);
       setLikeCount(0);
@@ -108,7 +92,7 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
         const results = await Promise.allSettled([
           apiClient.get(`/api/videos/${id}/like-count`),
           apiClient.get(`/api/totalscore/${id}`),
-          apiClient.get(`/api/videos/user/${id}/subtitles.srt`)
+          apiClient.get(`/api/videos/user/${id}/subtitles.srt`),
         ]);
 
         const [likeResult, scoreResult, subtitlesResult] = results;
@@ -160,15 +144,11 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
   };
 
   const handleLikePress = () => {
-    const wasLiked = isLiked; // Capture status BEFORE the update
-
-    // 1. Update the local count and trigger the API call via props
+    const wasLiked = isLiked;
     setLikeCount(prev => prev + (wasLiked ? -1 : 1));
     onLike(id);
 
-    // 2. Trigger the correct animation based on action - faster timing
     if (wasLiked) {
-      // User is UN-LIKING (show broken heart)
       largeDislikeHeartScale.value = 0;
       largeDislikeHeartOpacity.value = 1;
       largeDislikeHeartScale.value = withTiming(1, { duration: 280 }, (finished) => {
@@ -178,7 +158,6 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
         }
       });
     } else {
-      // User is LIKING (show large red heart)
       largeLikeHeartScale.value = 0;
       largeLikeHeartOpacity.value = 1;
       largeLikeHeartScale.value = withTiming(1, { duration: 280 }, (finished) => {
@@ -190,11 +169,9 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
     }
   };
 
-
   const doubleTapGesture = Gesture.Tap()
     .numberOfTaps(2)
     .onStart(() => {
-      // Run the animation and like logic on double tap
       runOnJS(handleLikePress)();
     });
 
@@ -208,9 +185,7 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
 
   const handleShare = useCallback(async () => {
     if (!thumbnail) return Alert.alert('Error', 'Thumbnail is not available.');
-
     const localThumbnailPath = `${RNFS.CachesDirectoryPath}/share_thumbnail_${Date.now()}.jpg`;
-
     try {
       await RNFS.downloadFile({ fromUrl: thumbnail, toFile: localThumbnailPath }).promise;
       await Share.open({
@@ -224,21 +199,6 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
       }
     }
   }, [thumbnail, firstName]);
-
-  const handleCall = () => {
-    if (phoneNumber) {
-      const url = `tel:${phoneNumber}`;
-      Linking.canOpenURL(url).then(supported => {
-        if (supported) {
-          Linking.openURL(url);
-        } else {
-          Alert.alert('Error', 'Phone calls are not supported on this device.');
-        }
-      });
-    } else {
-      Alert.alert('Info', 'No phone number available for this user.');
-    }
-  };
 
   const handleEmail = () => {
     if (email) {
@@ -258,21 +218,17 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
   const canSeeContactInfo = loggedInUserRole === 'Employer' || loggedInUserRole === 'Investor';
 
   const playPauseStyle = useAnimatedStyle(() => ({ opacity: playPauseOpacity.value }));
-
   const animatedLikeHeartStyle = useAnimatedStyle(() => ({
     opacity: largeLikeHeartOpacity.value,
     transform: [{ scale: largeLikeHeartScale.value }],
   }));
-
   const animatedDislikeHeartStyle = useAnimatedStyle(() => ({
     opacity: largeDislikeHeartOpacity.value,
     transform: [{ scale: largeDislikeHeartScale.value }],
   }));
 
-  const likeIcon = isLiked ? EMOJI.HEART_RED : EMOJI.HEART_WHITE;
-
-  // Use Emoji for the play/pause overlay
-  const playPauseIcon = isPaused ? EMOJI.PLAY : EMOJI.PAUSE;
+  const likeIcon = isLiked ? ICON_MAP.HEART_RED : ICON_MAP.HEART_WHITE;
+  const playPauseIcon = isPaused ? ICON_MAP.PLAY : ICON_MAP.PAUSE;
 
   return (
     <GestureDetector gesture={doubleTapGesture}>
@@ -306,26 +262,22 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
 
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleTogglePlay} activeOpacity={1} />
 
-        {/* EMOJI: Play/Pause Overlay */}
         <Animated.View style={[styles.playPauseOverlay, playPauseStyle]}>
-          <Emoji unicode={playPauseIcon} size={80} color="rgba(255, 255, 255, 0.7)" />
+          <MaterialIcons name={playPauseIcon} size={100} color="rgba(255, 255, 255, 0.7)" />
         </Animated.View>
 
-        {/* Animated View for the LIKED Heart (Red) */}
         <Animated.View style={[styles.heartAnimationContainer, animatedLikeHeartStyle]}>
-          <Emoji unicode={EMOJI.HEART_RED} size={100} />
+          <MaterialIcons name="favorite" size={220} color="#FF005E" />
         </Animated.View>
 
-        {/* Animated View for the DISLIKED Heart (Broken) */}
         <Animated.View style={[styles.heartAnimationContainer, animatedDislikeHeartStyle]}>
-          <Emoji unicode={EMOJI.HEART_BROKEN} size={100} />
+          <MaterialIcons name="heart-broken" size={220} color="#666" />
         </Animated.View>
 
         <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.6)']} style={styles.overlay}>
           <View style={styles.topControls}>
             <AnimatedIconButton onPress={() => navigation.goBack()}>
-              {/* EMOJI: Back Arrow */}
-              <Emoji unicode={EMOJI.ARROW_LEFT} size={22} color={'#fff'} />
+              <MaterialIcons name={ICON_MAP.ARROW_LEFT} size={28} color="#fff" />
             </AnimatedIconButton>
           </View>
           <View style={styles.bottomControls}>
@@ -341,43 +293,83 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole })
               </View>
             </View>
             <View style={styles.rightColumn}>
-              {/* EMOJI: Like Heart (Small Icon) */}
               <AnimatedIconButton onPress={handleLikePress}>
-                <Emoji unicode={likeIcon} size={25} color={isLiked ? '#FF005E' : '#fff'} />
+                <MaterialIcons name={likeIcon} size={28} color={isLiked ? '#FF005E' : '#fff'} />
                 <Text style={styles.iconText}>{likeCount}</Text>
               </AnimatedIconButton>
 
               {canSeeContactInfo && (
                 <>
                   <AnimatedIconButton onPress={() => navigation.navigate('ScoringScreen', { videoId: id, userId: videoOwnerId })}>
-                    {/* EMOJI: Speedometer/Score */}
-                    <Emoji unicode={EMOJI.SPEEDOMETER} size={25} color={'#fff'} />
+                    <MaterialIcons name={ICON_MAP.SPEEDOMETER} size={28} color="#fff" />
                     <Text style={styles.iconText}>{totalScore}</Text>
                   </AnimatedIconButton>
-                  <AnimatedIconButton onPress={handleCall}>
-                    {/* EMOJI: Phone */}
-                    <Emoji unicode={EMOJI.PHONE} size={25} color={'#fff'} />
+                  <AnimatedIconButton onPress={() => setShowLinkModal(true)}>
+                    <MaterialIcons name={ICON_MAP.LINK} size={28} color="#fff" />
                   </AnimatedIconButton>
                   <AnimatedIconButton onPress={handleEmail}>
-                    {/* EMOJI: Email */}
-                    <Emoji unicode={EMOJI.EMAIL} size={25} color={'#fff'} />
+                    <MaterialIcons name={ICON_MAP.EMAIL} size={28} color="#fff" />
                   </AnimatedIconButton>
                 </>
               )}
 
               <AnimatedIconButton onPress={handleShare}>
-                {/* EMOJI: Share */}
-                <Emoji unicode={EMOJI.SHARE_ARROW} size={25} color={'#fff'} />
+                <MaterialIcons name={ICON_MAP.SHARE_ARROW} size={28} color="#fff" />
               </AnimatedIconButton>
             </View>
           </View>
         </LinearGradient>
+
+        {/* Links Modal */}
+        <Modal
+          visible={showLinkModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowLinkModal(false)}
+        >
+          <TouchableOpacity
+            style={styles.linkModalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowLinkModal(false)}
+          >
+            <View style={styles.linkModalContainer}>
+              <View style={styles.linkModalHandle} />
+              <Text style={styles.linkModalTitle}>Profile Links</Text>
+              {link ? (
+                link.split(',').map((entry, index) => {
+                  const colonIdx = entry.indexOf(':https');
+                  const platform = colonIdx !== -1 ? entry.substring(0, colonIdx) : entry;
+                  const url = colonIdx !== -1 ? entry.substring(colonIdx + 1) : entry;
+                  const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.linkModalItem}
+                      onPress={() => Linking.openURL(fullUrl)}
+                    >
+                      <MaterialIcons name="link" size={20} color="#0077B5" />
+                      <View style={styles.linkModalTextWrap}>
+                        <Text style={styles.linkModalPlatform}>{platform}</Text>
+                        <Text style={styles.linkModalText} numberOfLines={1}>{url}</Text>
+                      </View>
+                      <MaterialIcons name="open-in-new" size={18} color="#999" />
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={styles.linkModalEmpty}>No links added yet.</Text>
+              )}
+              <TouchableOpacity style={styles.linkModalClose} onPress={() => setShowLinkModal(false)}>
+                <Text style={styles.linkModalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </GestureDetector>
   );
 });
 
-// --- HomeSwipe Component (FilterSwipe) ---
 const HomeSwipe = () => {
   const route = useRoute();
   const navigation = useNavigation();
@@ -393,10 +385,9 @@ const HomeSwipe = () => {
       const apiUserIdStr = await AsyncStorage.getItem('userId');
       const apiFirstName = await AsyncStorage.getItem('firstName');
       const jobOption = await AsyncStorage.getItem('jobOption');
-
       if (apiUserIdStr) {
         const parsedUserId = parseInt(apiUserIdStr, 10);
-        setUser({ userId: parsedUserId, firstName: apiFirstName, jobOption: jobOption });
+        setUser({ userId: parsedUserId, firstName: apiFirstName, jobOption });
         fetchLikeStatus(parsedUserId);
       }
     };
@@ -414,18 +405,15 @@ const HomeSwipe = () => {
 
   const handleLike = useCallback(async (videoId) => {
     if (!user.userId) return;
-
     setLikedStatus(prevLikedStatus => {
       const isCurrentlyLiked = !!prevLikedStatus[videoId];
       const endpoint = isCurrentlyLiked ? 'dislike' : 'like';
-
       apiClient.post(`/api/videos/${videoId}/${endpoint}`, null, {
         params: { userId: user.userId, firstName: user.firstName },
       }).catch(() => {
         Alert.alert('Error', 'Could not update like status.');
         setLikedStatus(currentStatus => ({ ...currentStatus, [videoId]: isCurrentlyLiked }));
       });
-
       return { ...prevLikedStatus, [videoId]: !isCurrentlyLiked };
     });
   }, [user.userId, user.firstName]);
@@ -489,22 +477,23 @@ const styles = StyleSheet.create({
   userName: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
   iconButton: { alignItems: 'center', paddingVertical: 10 },
   iconText: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 4 },
-  errorContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  errorText: {
-    color: 'white',
-    fontSize: 16,
-    textAlign: 'center',
-    padding: 20,
-  },
+  errorContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  errorText: { color: 'white', fontSize: 16, textAlign: 'center', padding: 20 },
   transcriptionContainer: { backgroundColor: 'rgba(0, 0, 0, 0.5)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 10, alignSelf: 'center', marginBottom: '10%' },
   transcriptionText: { color: '#fff', fontSize: 16, fontWeight: '500' },
   playPauseOverlay: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
   heartAnimationContainer: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+  linkModalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  linkModalContainer: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  linkModalHandle: { width: 40, height: 4, backgroundColor: '#ddd', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  linkModalTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 16 },
+  linkModalItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, gap: 10, marginBottom: 10 },
+  linkModalTextWrap: { flex: 1 },
+  linkModalPlatform: { fontSize: 13, fontWeight: '700', color: '#333', textTransform: 'capitalize', marginBottom: 2 },
+  linkModalText: { flex: 1, fontSize: 14, color: '#0077B5', fontWeight: '500' },
+  linkModalEmpty: { fontSize: 14, color: '#999', textAlign: 'center', paddingVertical: 20 },
+  linkModalClose: { marginTop: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: '#111', alignItems: 'center' },
+  linkModalCloseText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
 export default HomeSwipe;
