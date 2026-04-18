@@ -22,7 +22,9 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
-          bundler-cache: true
+
+      - name: Install Ruby dependencies
+        run: bundle install
 
       - name: Restore keystore from secret
         run: echo "$KEYSTORE_FILE" | base64 --decode > android/upload-key-new.jks
