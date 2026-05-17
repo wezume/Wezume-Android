@@ -366,14 +366,13 @@ const SignupScreen = () => {
         ],
       );
     } catch (error) {
-      console.error(
-        'Signup failed:',
-        error.response ? error.response.data : error.message,
-      );
-      Alert.alert(
-        'Signup failed',
-        error.response ? error.response.data.message : error.message,
-      );
+      const message = error.response
+        ? (typeof error.response.data === 'string'
+            ? error.response.data
+            : error.response.data?.message || JSON.stringify(error.response.data))
+        : error.message;
+      console.error('Signup failed:', message);
+      Alert.alert('Signup failed', message);
     } finally {
       setLoading(false);
     }
@@ -383,11 +382,16 @@ const SignupScreen = () => {
     try {
       const response = await axios.post(
         `${env.baseURL}/users/check-email`,
-        { email }, // Wrapping email in an object
+        { email },
         { headers: { 'Content-Type': 'application/json' } },
       );
-      return response.data.exists;
+      // Endpoint returns {"message": "Email is available"} on 200 (not exists)
+      // and 400 on exists (caught below)
+      return false;
     } catch (error) {
+      if (error.response && error.response.status === 400) {
+        return true; // Email already exists
+      }
       console.error('Error checking email:', error);
       return false;
     }
