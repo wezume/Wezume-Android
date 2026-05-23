@@ -11,6 +11,7 @@ import {
   Platform,
   StatusBar,
   Text,
+  Image,
   ScrollView,
 } from 'react-native';
 import Animated, {
@@ -31,7 +32,7 @@ const WZ = {
   line: '#E5ECF3', bg: '#F4F8FC', card: '#FFFFFF',
 };
 
-const CACHED_VIDEOS_KEY = 'cachedVideos';
+const CACHED_MY_VIDEO_KEY = 'cachedMyVideo';
 
 // --- Memoized and Animated Video Item ---
 const VideoThumbnail = memo(({ item, index, onVideoPress }) => {
@@ -81,38 +82,12 @@ const HomeScreen = () => {
   const [_profileImage, setProfileImage] = useState(null); // loaded for future use (e.g. avatar in hero)
   const [verificationStatus, setVerificationStatus] = useState(null);
 
-  // --- Pagination and Refreshing State ---
-  const [page, setPage] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMoreData, setHasMoreData] = useState(true);
-  // ✅ FIX: Added state for pull-to-refresh
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const VIDEO_PAGE_SIZE = 20;
-
-  const fetchVideosFromServer = useCallback(async (currentPage, currentUserId) => {
-    // This guard now correctly prevents fetches for subsequent pages when loading,
-    // or when we know there is no more data.
-    if ((currentPage > 0 && loadingMore) || !hasMoreData) return;
-
-    // Use the appropriate loading indicator
-    const loadingFunction = currentPage === 0 ? setIsLoading : setLoadingMore;
-    if (!isRefreshing) {
-      loadingFunction(true);
-    }
-
+  const fetchMyVideos = useCallback(async (userId) => {
     try {
-      const response = await apiClient.get(`/api/videos/videos?page=${currentPage}&size=${VIDEO_PAGE_SIZE}`);
-      const { videos: videoData, totalPages, currentPage: responseCurrentPage } = response.data;
-
-      if (!Array.isArray(videoData)) throw new Error('Invalid data format');
-
-      if (responseCurrentPage >= totalPages - 1 || videoData.length === 0) {
-        setHasMoreData(false);
-      }
-
-      const formattedVideos = videoData
-        .filter(video => video.userId !== currentUserId && video.thumbnail)
-        .map(video => ({
+      const response = await apiClient.get(`/api/videos/user/${userId}`);
+      const video = response.data;
+      if (video && video.id) {
+        const formatted = [{
           id: video.id,
           userId: video.userId,
           uri: video.videoUrl || video.uri,
@@ -122,42 +97,19 @@ const HomeScreen = () => {
           email: video.email || '',
           thumbnail: video.thumbnail || null,
           link: video.links || '',
-        }));
-      console.log("formatted video", formattedVideos);
-
-      if (currentPage === 0) {
-        setVideos(formattedVideos);
-        await AsyncStorage.setItem(CACHED_VIDEOS_KEY, JSON.stringify(formattedVideos));
+        }];
+        setVideos(formatted);
+        videosRef.current = formatted;
+        await AsyncStorage.setItem(CACHED_MY_VIDEO_KEY, JSON.stringify(formatted));
       } else {
-
-        setVideos(prevVideos => {
-          const newUniqueVideos = formattedVideos.filter(
-            newVideo => !prevVideos.some(prevVideo => prevVideo.id === newVideo.id)
-          );
-          const updatedVideos = [...prevVideos, ...newUniqueVideos];
-          AsyncStorage.setItem(CACHED_VIDEOS_KEY, JSON.stringify(updatedVideos));
-          // Update ref
-          videosRef.current = updatedVideos;
-          return updatedVideos;
-        });
+        setVideos([]);
+        videosRef.current = [];
       }
-
-      // Update ref for page 0 case too
-      if (currentPage === 0) {
-        videosRef.current = formattedVideos;
-      }
-
     } catch (err) {
-      console.error('Error fetching videos from server:', err);
-      setHasMoreData(false);
-    } finally {
-      if (!isRefreshing) {
-        loadingFunction(false);
-      }
+      console.error('Error fetching my videos:', err);
     }
-  }, [hasMoreData, loadingMore, isRefreshing]);
+  }, []);
 
-  // ✅ FIX: This useEffect now runs ONLY ONCE when the component mounts
   useEffect(() => {
     const loadInitialData = async () => {
       setIsLoading(true);
@@ -177,45 +129,23 @@ const HomeScreen = () => {
       setVerificationStatus(verStatus);
 
       try {
-        const cachedVideos = await AsyncStorage.getItem(CACHED_VIDEOS_KEY);
-        if (cachedVideos) {
-          const parsed = JSON.parse(cachedVideos);
+        const cached = await AsyncStorage.getItem(CACHED_MY_VIDEO_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
           setVideos(parsed);
           videosRef.current = parsed;
         }
       } catch (error) {
-        console.error("Error loading videos from cache:", error);
+        console.error('Error loading cached video:', error);
       }
 
-      // Fetch fresh data for page 0 to ensure content isn't stale
-      await fetchVideosFromServer(0, currentUser.userId);
+      await fetchMyVideos(userId);
       setIsLoading(false);
     };
 
     loadInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array means it runs only once on mount
-
-
-  // --- Handlers ---
-
-  // ✅ FIX: Created a dedicated refresh handler
-  const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    // Reset pagination state and fetch the first page
-    setPage(0);
-    setHasMoreData(true);
-    await fetchVideosFromServer(0, user.userId);
-    setIsRefreshing(false);
-  }, [user.userId, fetchVideosFromServer]);
-
-  const handleLoadMore = () => {
-    if (!loadingMore && hasMoreData && !isRefreshing) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchVideosFromServer(nextPage, user.userId);
-    }
-  };
+  }, []);
 
   const handleVideoPress = useCallback((item, index) => {
     navigation.navigate('HomeSwipe', {
@@ -232,11 +162,6 @@ const HomeScreen = () => {
       onVideoPress={handleVideoPress}
     />
   ), [handleVideoPress]);
-
-  const renderFooter = () => {
-    if (!loadingMore) return null;
-    return <ActivityIndicator style={{ marginVertical: 20 }} size="large" color={WZ.blue} />;
-  };
 
   // --- Back Button Handler ---
   useEffect(() => {
@@ -274,7 +199,12 @@ const HomeScreen = () => {
         style={styles.heroBand}>
         {/* Topbar row */}
         <View style={styles.heroTopbar}>
-          <Text style={styles.heroWordmark}>wezume</Text>
+          <Image
+              source={require('../assets/brand/wezume-wordmark-trimmed.png')}
+              style={styles.wordmark}
+              resizeMode="contain"
+              tintColor="#fff"
+            />
           <View style={styles.heroIcons}>
             <TouchableOpacity style={styles.heroIconBtn}>
               <Text style={styles.heroIconText}>⚡</Text>
@@ -334,15 +264,14 @@ const HomeScreen = () => {
           </TouchableOpacity>
         </LinearGradient>
 
-        {/* Discover section heading */}
-        <View style={styles.discoverHeader}>
-          <Text style={styles.discoverTitle}>Discover</Text>
-          <TouchableOpacity>
-            <Text style={styles.discoverSeeAll}>See all</Text>
+        {/* My Takes section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>My Takes</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('CameraPage')}>
+            <Text style={styles.sectionCta}>+ Record</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Video grid */}
         {isLoading && videos.length === 0 ? (
           <ActivityIndicator size="large" color={WZ.blue} style={{ marginTop: 40 }} />
         ) : (
@@ -354,17 +283,11 @@ const HomeScreen = () => {
             initialNumToRender={20}
             maxToRenderPerBatch={20}
             windowSize={21}
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={renderFooter}
-            ListEmptyComponent={!isLoading && !isRefreshing ? (
+            ListEmptyComponent={!isLoading ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No videos available right now.</Text>
+                <Text style={styles.emptyText}>No takes yet. Hit record to start.</Text>
               </View>
             ) : null}
-            // ✅ FIX: Added props for pull-to-refresh
-            onRefresh={handleRefresh}
-            refreshing={isRefreshing}
             scrollEnabled={false}
           />
         )}
@@ -405,11 +328,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
   },
-  heroWordmark: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  wordmark: {
+    height: 36,
+    width: 126,
   },
   heroIcons: {
     flexDirection: 'row',
@@ -525,18 +446,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  discoverHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  discoverTitle: {
+  sectionTitle: {
     color: WZ.ink,
     fontSize: 17,
     fontWeight: '700',
   },
-  discoverSeeAll: {
+  sectionCta: {
     color: WZ.blue,
     fontSize: 13,
     fontWeight: '600',
