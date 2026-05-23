@@ -3,6 +3,7 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Text,
   ActivityIndicator,
   Modal,
@@ -24,7 +25,16 @@ import apiClient from './api';
 const apiService = {
   fetchVideo: (userId) => apiClient.get(`/api/videos/user/${userId}`),
   fetchTranscription: (videoId) => apiClient.get(`/api/videos/${videoId}/transcription`),
-  updateTranscription: (videoId, transcription) => apiClient.put(`/api/videos/${videoId}/transcription`, { transcription }),
+  // Note: Backend expects userId in path, not videoId
+  updateTranscription: (userId, transcription) =>
+    apiClient.put(`/api/videos/${userId}/transcription`,
+      { transcription },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    ),
 };
 
 // --- Child Components (Unchanged) ---
@@ -42,7 +52,7 @@ const VideoPlayer = memo(({ uri }) => (
 const ActionButtons = memo(({ onTranscriptionPress, onDonePress }) => (
   <View style={styles.buttons.container}>
     <TouchableOpacity style={styles.buttons.button} onPress={onTranscriptionPress}>
-      <Text style={styles.buttons.text}>Check Transcription</Text>
+      <Text style={styles.buttons.text}>Edit Transcription</Text>
     </TouchableOpacity>
     <TouchableOpacity style={styles.buttons.button} onPress={onDonePress}>
       <Text style={styles.buttons.text}>Done</Text>
@@ -50,32 +60,41 @@ const ActionButtons = memo(({ onTranscriptionPress, onDonePress }) => (
   </View>
 ));
 
-const TranscriptionModal = memo(({ visible, transcription, onUpdate, onClose, onTextChange, currentText }) => (
-  <Modal visible={visible} animationType="slide" transparent>
-    <View style={styles.modal.background}>
-      <View style={styles.modal.glassContainer}>
-        <BlurView style={styles.modal.blurView} blurType="light" blurAmount={20} />
-        <Text style={styles.modal.title}>Transcription</Text>
-        <TextInput
-          value={currentText}
-          onChangeText={onTextChange}
-          style={styles.modal.input}
-          multiline
-          placeholder="Enter transcription..."
-          placeholderTextColor="rgba(0, 0, 0, 0.4)"
-        />
-        <View style={styles.modal.buttonContainer}>
-          <TouchableOpacity style={styles.buttons.button} onPress={onUpdate}>
-            <Text style={styles.buttons.text}>Update</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.buttons.button} onPress={onClose}>
-            <Text style={styles.buttons.text}>Close</Text>
-          </TouchableOpacity>
+const TranscriptionModal = memo(({ visible, transcription: _transcription, onUpdate, onClose, onTextChange, value }) => {
+  console.log('🎭 Modal rendered - visible:', visible, 'value:', value, 'value length:', value?.length);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <TouchableWithoutFeedback onPress={() => { }}>
+        <View style={styles.modal.background}>
+          <TouchableWithoutFeedback onPress={() => { }}>
+            <View style={styles.modal.glassContainer}>
+              <BlurView style={styles.modal.blurView} blurType="light" blurAmount={20} />
+              <Text style={styles.modal.title}>Transcription</Text>
+              <TextInput
+                value={value}
+                onChangeText={onTextChange}
+                style={styles.modal.input}
+                multiline
+                placeholder="Enter transcription..."
+                placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                autoFocus={false}
+              />
+              <View style={styles.modal.buttonContainer}>
+                <TouchableOpacity style={styles.buttons.button} onPress={onUpdate}>
+                  <Text style={styles.buttons.text}>Update</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.buttons.button} onPress={onClose}>
+                  <Text style={styles.buttons.text}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
         </View>
-      </View>
-    </View>
-  </Modal>
-));
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+});
 
 // --- Main Component ---
 const TranscribeScreen = () => {
@@ -87,6 +106,11 @@ const TranscribeScreen = () => {
   const [profileImage, setProfileImage] = useState(null);
   const [isModalVisible, setModalVisible] = useState(false);
   const [newTranscription, setNewTranscription] = useState('');
+
+  // Debug: Track modal visibility changes
+  useEffect(() => {
+    console.log('🎭 Modal visibility changed:', isModalVisible);
+  }, [isModalVisible]);
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -112,6 +136,8 @@ const TranscribeScreen = () => {
         // Now, handle the video data
         if (route.params?.videos?.length > 0) {
           const newVideo = route.params.videos[0];
+          console.log('📹 Loading video from route params:', newVideo);
+          console.log('📝 Transcription from params:', newVideo.transcription);
           setVideoData({
             uri: newVideo.url,
             hasVideo: true,
@@ -120,7 +146,10 @@ const TranscribeScreen = () => {
           });
         } else {
           // Fallback to fetching the user's main video
+          console.log('📡 Fetching video for user:', userId);
           const videoRes = await apiService.fetchVideo(userId);
+          console.log('📹 Video API response:', videoRes.data);
+          console.log('📝 Transcription from API:', videoRes.data?.transcription);
           if (videoRes.data && videoRes.data.videoUrl) {
             setVideoData({
               uri: videoRes.data.videoUrl,
@@ -142,71 +171,76 @@ const TranscribeScreen = () => {
     loadInitialData();
   }, [route.params]);
 
-  const handleFetchTranscription = useCallback(async () => {
-    if (!videoData.id) {
-      Alert.alert('Error', 'No video ID available');
-      return;
-    }
-    setLoading(true);
-    try {
-      console.log('Fetching transcription for video ID:', videoData.id);
-      const response = await apiService.fetchTranscription(videoData.id);
-      console.log('Transcription response:', response.data);
 
-      if (response.data.transcription) {
-        const transcriptionText = response.data.transcription;
-        setVideoData(prev => ({ ...prev, transcription: transcriptionText }));
-        setNewTranscription(transcriptionText);
-        setModalVisible(true);
-      } else {
-        // If no transcription exists, allow user to create one
-        setNewTranscription(videoData.transcription || '');
-        setModalVisible(true);
-      }
-    } catch (error) {
-      console.error('Failed to fetch transcription:', error);
-      console.error('Error response:', error.response?.data);
-      // Still open modal to allow creating new transcription
-      setNewTranscription(videoData.transcription || '');
-      setModalVisible(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [videoData.id, videoData.transcription]);
+  const handleFetchTranscription = useCallback(() => {
+    console.log('🔍 Opening transcription modal');
+    console.log('📹 Video Data:', videoData);
+    console.log('📝 Current transcription:', videoData.transcription);
+
+    // Open modal with existing transcription data
+    // Note: The fetch API endpoint is returning 500 error, so we skip it
+    // Users can view/edit existing transcription or add new one
+    setNewTranscription(videoData.transcription || '');
+    setModalVisible(true);
+    console.log('✅ Modal opened with transcription');
+  }, [videoData.transcription]);
 
   const handleUpdateTranscription = useCallback(async () => {
-    if (!videoData.id) {
-      Alert.alert('Error', 'No video ID available');
+    if (!user.userId) {
+      Alert.alert('Error', 'User ID not available. Please log in again.');
       return;
     }
 
-    if (!newTranscription || newTranscription.trim() === '') {
-      Alert.alert('Error', 'Transcription cannot be empty');
-      return;
-    }
+    console.log('📤 Updating transcription for user ID:', user.userId);
+    console.log('📹 Video ID:', videoData.id);
+    console.log('📝 New transcription text:', newTranscription);
+    console.log('📏 Transcription length:', newTranscription?.length);
 
-    setLoading(true);
     try {
-      console.log('Updating transcription for video ID:', videoData.id);
-      console.log('New transcription:', newTranscription);
-
-      const response = await apiService.updateTranscription(videoData.id, newTranscription);
-      console.log('Update response:', response.data);
+      // Backend expects userId in the path, not videoId
+      const response = await apiService.updateTranscription(user.userId, newTranscription);
+      console.log('✅ Update successful! Response:', response.data);
 
       setVideoData(prev => ({ ...prev, transcription: newTranscription }));
       setModalVisible(false);
       Alert.alert('Success', 'Transcription updated successfully!');
     } catch (error) {
-      console.error('Error updating transcription:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
+      console.error('❌ Error updating transcription:', error);
+      console.error('Error message:', error.message);
+      console.error('Error response data:', error.response?.data);
+      console.error('Error response status:', error.response?.status);
+      console.error('Error response headers:', error.response?.headers);
+      console.error('Request config:', error.config);
 
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to update transcription';
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setLoading(false);
+      let errorMessage = 'Failed to update transcription.';
+
+      if (error.response) {
+        // Server responded with error
+        const status = error.response.status;
+        const data = error.response.data;
+
+        if (status === 404) {
+          errorMessage = 'User or video not found. Please try again.';
+        } else if (status === 401 || status === 403) {
+          errorMessage = 'Authentication error. Please log in again.';
+        } else if (status === 400) {
+          errorMessage = data?.message || 'Invalid request. Please check your input.';
+        } else if (status >= 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          errorMessage = data?.message || `Error ${status}: ${JSON.stringify(data)}`;
+        }
+      } else if (error.request) {
+        // Request made but no response
+        errorMessage = 'Network error. Please check your connection.';
+      } else {
+        // Something else happened
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+
+      Alert.alert('Update Failed', errorMessage + '\n\nCheck console for details.');
     }
-  }, [videoData.id, newTranscription]);
+  }, [user.userId, videoData.id, newTranscription]);
 
   if (loading) {
     return (
@@ -232,7 +266,7 @@ const TranscribeScreen = () => {
               <VideoPlayer uri={videoData.uri} />
               <ActionButtons
                 onTranscriptionPress={handleFetchTranscription}
-                onDonePress={() => navigation.navigate('home1')}
+                onDonePress={() => navigation.navigate('HomeScreen')}
               />
             </>
           ) : (
@@ -245,7 +279,7 @@ const TranscribeScreen = () => {
       <TranscriptionModal
         visible={isModalVisible}
         transcription={videoData.transcription}
-        currentText={newTranscription}
+        value={newTranscription}
         onTextChange={setNewTranscription}
         onUpdate={handleUpdateTranscription}
         onClose={() => setModalVisible(false)}
