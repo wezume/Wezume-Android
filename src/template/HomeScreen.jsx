@@ -81,6 +81,29 @@ const HomeScreen = () => {
   const videosRef = useRef([]); // Ref to hold videos for stable callbacks
   const [_profileImage, setProfileImage] = useState(null); // loaded for future use (e.g. avatar in hero)
   const [verificationStatus, setVerificationStatus] = useState(null);
+  const [resendSent, setResendSent] = useState(false);
+
+  const refreshVerificationStatus = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/api/user-detail');
+      const status = res.data?.verification_status ?? null;
+      if (status) {
+        setVerificationStatus(status);
+        await AsyncStorage.setItem('verification_status', String(status));
+      }
+    } catch (_) {}
+  }, []);
+
+  const handleResendVerification = useCallback(async () => {
+    try {
+      const email = await AsyncStorage.getItem('email');
+      await apiClient.post('/api/users/resend-verification', { email });
+      setResendSent(true);
+      Alert.alert('Email sent', 'Check your inbox for the verification link.');
+    } catch (_) {
+      Alert.alert('Error', 'Could not send verification email. Please try again.');
+    }
+  }, []);
 
   const fetchMyVideos = useCallback(async (userId) => {
     try {
@@ -109,6 +132,10 @@ const HomeScreen = () => {
       console.error('Error fetching my videos:', err);
     }
   }, []);
+
+  useEffect(() => {
+    if (isFocused) refreshVerificationStatus();
+  }, [isFocused, refreshVerificationStatus]);
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -200,25 +227,45 @@ const HomeScreen = () => {
         {/* Topbar row */}
         <View style={styles.heroTopbar}>
           <Image
-              source={require('../assets/brand/wezume-wordmark-trimmed.png')}
-              style={styles.wordmark}
-              resizeMode="contain"
-              tintColor="#fff"
-            />
-          <View style={styles.heroIcons}>
-            <TouchableOpacity style={styles.heroIconBtn}>
-              <Text style={styles.heroIconText}>⚡</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.heroIconBtn}>
-              <Text style={styles.heroIconText}>☰</Text>
-            </TouchableOpacity>
-          </View>
+            source={require('../assets/brand/wezume-wordmark-trimmed.png')}
+            style={styles.wordmark}
+            resizeMode="contain"
+            tintColor="#fff"
+          />
+          <TouchableOpacity style={styles.heroIconBtn}>
+            <Text style={styles.heroIconText}>☰</Text>
+          </TouchableOpacity>
         </View>
         {/* Greeting */}
         <View style={styles.greetingWrap}>
           <Text style={styles.greetingSmall}>{getGreeting()}</Text>
-          <Text style={styles.greetingName}>{user.firstName} 👋</Text>
+          <View style={styles.greetingRow}>
+            <Text style={styles.greetingName}>{user.firstName} 👋</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Edit')}
+              activeOpacity={0.7}
+              style={styles.editProfileBtn}
+            >
+              <Text style={styles.editProfileText}>update profile →</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+        {/* Verify pill */}
+        {verificationStatus === 'verified' ? (
+          <View style={styles.verifiedPill}>
+            <Text style={styles.verifiedPillText}>✓ email verified</Text>
+          </View>
+        ) : verificationStatus === 'pending' ? (
+          <TouchableOpacity
+            style={[styles.verifyPill, resendSent && styles.verifyPillSent]}
+            onPress={handleResendVerification}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.verifyPillText}>
+              {resendSent ? '✉ email sent · resend' : '✉ verify your email →'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </LinearGradient>
 
       {/* Cards section (overlapping hero) */}
@@ -226,15 +273,6 @@ const HomeScreen = () => {
         style={styles.scrollArea}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-
-        {/* Verify Banner (shown only if pending) */}
-        {verificationStatus === 'pending' && (
-          <View style={styles.verifyBanner}>
-            <Text style={styles.verifyBannerText}>
-              Your account is pending verification.
-            </Text>
-          </View>
-        )}
 
         {/* AI Review headline card */}
         <View style={styles.aiReviewCard}>
@@ -346,6 +384,19 @@ const styles = StyleSheet.create({
   greetingWrap: {
     marginTop: 4,
   },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editProfileBtn: {
+    paddingVertical: 2,
+  },
+  editProfileText: {
+    color: 'rgba(255,255,255,0.70)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   greetingSmall: {
     color: 'rgba(255,255,255,0.70)',
     fontSize: 12,
@@ -367,18 +418,38 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 100,
   },
-  verifyBanner: {
-    backgroundColor: WZ.amber,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    marginTop: 8,
+  verifyPill: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#8B1A1A',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
-  verifyBannerText: {
-    color: WZ.ink,
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
+  verifyPillSent: {
+    backgroundColor: '#6B4C00',
+  },
+  verifyPillText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  verifiedPill: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(44,198,161,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(44,198,161,0.55)',
+  },
+  verifiedPillText: {
+    color: '#2CC6A1',
+    fontSize: 12,
+    fontWeight: '700',
   },
   aiReviewCard: {
     backgroundColor: WZ.card,
