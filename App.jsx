@@ -6,37 +6,43 @@ import notifee from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import Screens
-import Initial from './src/template/initialScreen.jsx';
-import LoginScreen from './src/template/LoginScreen.jsx';
-import SignupScreen from './src/template/SignupScreen.jsx';
-import HomeScreen from './src/template/HomeScreen.jsx';
-import home1 from './src/template/home1.jsx';
-import OnboardingScreen from './src/template/onboarding.jsx';
-import CameraScreen from './src/template/camera.jsx';
-import Profile from './src/template/Profile.jsx';
-import Transcribe from './src/template/transcribe.jsx';
-import Account from './src/template/account.jsx';
-import LikeScreen from './src/template/likedvideo.jsx';
-import Edit from './src/template/Edit.jsx';
-import Filtered from './src/template/filterd.jsx';
-import Trending from './src/template/trending.jsx';
-import Myvideos from './src/template/myvideos.jsx';
-import ForgetPassword from './src/template/forgetpassword.jsx';
-import VideoScreen from './src/template/VideoScreen.jsx';
-import HomeSwipe from './src/template/homeSwipe.jsx';
-import LikeSwipe from './src/template/likeSwipe.jsx';
-import TrendSwipe from './src/template/trendSwipe.jsx';
+import Initial from './src/template/initialScreen';
+import LoginScreen from './src/template/LoginScreen';
+import SignupScreen from './src/template/SignupScreen';
+import HomeScreen from './src/template/HomeScreen';
+import home1 from './src/template/home1';
+import OnboardingScreen from './src/template/onboarding';
+import CameraScreen from './src/template/camera';
+import Profile from './src/template/Profile';
+import Transcribe from './src/template/transcribe';
+import Account from './src/template/account';
+import LikeScreen from './src/template/likedvideo';
+import Edit from './src/template/Edit';
+import Filtered from './src/template/filterd';
+import Trending from './src/template/trending';
+import Myvideos from './src/template/myvideos';
+import ForgetPassword from './src/template/forgetpassword';
+import VideoScreen from './src/template/VideoScreen';
+import HomeSwipe from './src/template/homeSwipe';
+import LikeSwipe from './src/template/likeSwipe';
+import TrendSwipe from './src/template/trendSwipe';
 import MySwipe from './src/template/mySwipe.jsx';
-import AnalyticScreen from './src/template/Analytics.jsx';
-import FilterSwipe from './src/template/filterSwipe.jsx';
-import ScoringScreen from './src/template/scoring.jsx';
-import AppUpdateChecker from './src/template/AppUpdateChecker.jsx';
-import PlacemenntSignup from './src/template/placementSignup.jsx';
-import RoleSelection from './src/template/roleSelection.jsx';
-import RoleSwipe from './src/template/roleSwipe.jsx';
+import AnalyticScreen from './src/template/Analytics';
+import FilterSwipe from './src/template/filterSwipe';
+import ScoringScreen from './src/template/scoring';
+import AppUpdateChecker from './src/template/AppUpdateChecker';
 import RecruiterDash from './src/template/Recruiterdahs.jsx';
+import PlacemenntSignup from './src/template/placementSignup.jsx';
+import RoleSelection from './src/template/roleSelection';
+import RoleSwipe from './src/template/roleSwipe';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Test from './src/template/test.jsx';
+import LandingScreen from './src/template/LandingScreen';
+import RoleSelectScreen from './src/template/RoleSelectScreen';
+import DetailsScreen from './src/template/DetailsScreen';
+import SuccessScreen from './src/template/SuccessScreen';
+import MyVideoScreen from './src/template/MyVideoScreen';
+import { OnboardingProvider } from './src/template/OnboardingContext';
 const Stack = createNativeStackNavigator();
 
 const App = () => {
@@ -127,29 +133,75 @@ const App = () => {
   }, []);
 
   /** ✅ Function to handle deep link navigation */
-  const handleURLNavigation = url => {
+  const handleURLNavigation = (url) => {
     try {
-      const route = url.replace('app://', ''); // Extract route
+      // NOTE: navigationRef is now accessed from the parent component's scope (closure).
+      // A safety check ensures we only proceed if navigationRef exists.
+      if (typeof navigationRef === 'undefined' || navigationRef === null) {
+        console.error('❌ FATAL ERROR: navigationRef is not accessible in this scope.');
+        return;
+      }
+
+      let urlToProcess = url;
+
+      // --- STEP 1: Handle External URL with 'target' parameter ---
+      // This addresses URLs like: https://app.wezume.in/...share?target=app://...
+      if (url.startsWith('http') && url.includes('?target=')) {
+        // Split the URL to isolate the value of the 'target' parameter
+        // (Using basic string manipulation as URL API might not be available in all RN environments)
+        const urlParts = url.split('?target=');
+        if (urlParts.length > 1) {
+          // The deep link is everything after '?target='
+          urlToProcess = urlParts[1];
+          console.log(`[Extractor] Deep link extracted from target: ${urlToProcess}`);
+        } else {
+          console.error('❌ Could not parse deep link from target parameter.');
+          return;
+        }
+      }
+      // --- End Step 1 ---
+
+
+      // --- STEP 2: Process the internal deep link (app://api/videos/user/...) ---
+
+      // Ensure the link to process has the app:// prefix
+      if (!urlToProcess.startsWith('app://')) {
+        console.error('❌ Final URL to process does not start with app://', urlToProcess);
+        return;
+      }
+
+      const route = urlToProcess.replace('app://', ''); // Extract route
       const parts = route.split('/');
 
+      // Check if the structure matches the expected pattern: api/videos/user/.../...
       if (
         parts.length >= 5 &&
         parts[0] === 'api' &&
         parts[1] === 'videos' &&
         parts[2] === 'user'
       ) {
-        const videoUrl = parts.slice(3, -1).join('/'); // Extract video URL
+        // The video URL includes the 'https://' scheme and is composed of parts[3] 
+        // up to the second-to-last part (which is the video ID).
+        const videoUrl = parts.slice(3, -1).join('/');
         const videoId = parts[parts.length - 1]; // Extract video ID
+
         console.log(`Navigating to VideoScreen with video URL: ${videoUrl} and video ID: ${videoId}`);
 
         if (navigationRef.current) {
-          console.log('✅ Navigation triggered!');
-          navigationRef.current.navigate('VideoScreen', { videoUrl, videoId });
+          console.log('✅ Navigation triggered! Applying 300ms delay to ensure stack stability.');
+
+          // FIX: Apply a short delay to overcome navigation race conditions 
+          // that happen when deep links are processed before the navigation stack is fully ready.
+          setTimeout(() => {
+            navigationRef.current.navigate('VideoScreen', { videoUrl, videoId });
+          }, 300);
+
         } else {
+          // This means the NavigationContainer ref is null.
           console.error('❌ Navigation reference is not initialized yet.');
         }
       } else {
-        console.error('❌ URL format does not match expected pattern.');
+        console.error('❌ URL format does not match expected pattern (api/videos/user/...).');
       }
     } catch (error) {
       console.error('❌ Error processing deep link:', error);
@@ -157,44 +209,49 @@ const App = () => {
   };
 
   return (
-    <>
-      <GestureHandlerRootView>
-        <NavigationContainer ref={navigationRef}>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Initial" component={Initial} />
-            <Stack.Screen name="OnboardingScreen" component={OnboardingScreen} />
-            <Stack.Screen name="LoginScreen" component={LoginScreen} />
-            <Stack.Screen name="SignupScreen" component={SignupScreen} />
-            <Stack.Screen name="HomeScreen" component={HomeScreen} />
-            <Stack.Screen name="home1" component={home1} />
-            <Stack.Screen name="CameraPage" component={CameraScreen} />
-            <Stack.Screen name="profile" component={Profile} />
-            <Stack.Screen name="Transcribe" component={Transcribe} />
-            <Stack.Screen name="Account" component={Account} />
-            <Stack.Screen name="LikeScreen" component={LikeScreen} />
-            <Stack.Screen name="Filtered" component={Filtered} />
-            <Stack.Screen name="Edit" component={Edit} />
-            <Stack.Screen name="Trending" component={Trending} />
-            <Stack.Screen name="Myvideos" component={Myvideos} />
-            <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
-            <Stack.Screen name="VideoScreen" component={VideoScreen} />
-            <Stack.Screen name="HomeSwipe" component={HomeSwipe} />
-            <Stack.Screen name="MySwipe" component={MySwipe} />
-            <Stack.Screen name="FilterSwipe" component={FilterSwipe} />
-            <Stack.Screen name="TrendSwipe" component={TrendSwipe} />
-            <Stack.Screen name="LikeSwipe" component={LikeSwipe} />
-            <Stack.Screen name="ScoringScreen" component={ScoringScreen} />
-            <Stack.Screen name="AnalyticScreen" component={AnalyticScreen} />
-            <Stack.Screen name="PlacemenntSignup" component={PlacemenntSignup} />
-            <Stack.Screen name="RoleSelection" component={RoleSelection} />
-            <Stack.Screen name="RoleSwipe" component={RoleSwipe} />
-            <Stack.Screen name="RecruiterDash" component={RecruiterDash} />
-            <Stack.Screen name="Test" component={Test} />
-          </Stack.Navigator>
-        </NavigationContainer>
-        <AppUpdateChecker />
-      </GestureHandlerRootView>
-    </>
+    <GestureHandlerRootView>
+      <OnboardingProvider>
+      <NavigationContainer ref={navigationRef}>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Initial" component={Initial} />
+          <Stack.Screen name="OnboardingScreen" component={OnboardingScreen} />
+          <Stack.Screen name="LoginScreen" component={LoginScreen} />
+          <Stack.Screen name="SignupScreen" component={SignupScreen} />
+          <Stack.Screen name="HomeScreen" component={HomeScreen} />
+          <Stack.Screen name="home1" component={home1} />
+          <Stack.Screen name="CameraPage" component={CameraScreen} />
+          <Stack.Screen name="profile" component={Profile} />
+          <Stack.Screen name="Transcribe" component={Transcribe} />
+          <Stack.Screen name="Account" component={Account} />
+          <Stack.Screen name="LikeScreen" component={LikeScreen} />
+          <Stack.Screen name="Filtered" component={Filtered} />
+          <Stack.Screen name="Edit" component={Edit} />
+          <Stack.Screen name="Trending" component={Trending} />
+          <Stack.Screen name="Myvideos" component={Myvideos} />
+          <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
+          <Stack.Screen name="VideoScreen" component={VideoScreen} />
+          <Stack.Screen name="HomeSwipe" component={HomeSwipe} />
+          <Stack.Screen name="MySwipe" component={MySwipe} />
+          <Stack.Screen name="FilterSwipe" component={FilterSwipe} />
+          <Stack.Screen name="TrendSwipe" component={TrendSwipe} />
+          <Stack.Screen name="LikeSwipe" component={LikeSwipe} />
+          <Stack.Screen name="ScoringScreen" component={ScoringScreen} />
+          <Stack.Screen name="AnalyticScreen" component={AnalyticScreen} />
+          <Stack.Screen name="PlacemenntSignup" component={PlacemenntSignup} />
+          <Stack.Screen name="RoleSelection" component={RoleSelection} />
+          <Stack.Screen name="RoleSwipe" component={RoleSwipe} />
+          <Stack.Screen name="RecruiterDash" component={RecruiterDash} />
+          <Stack.Screen name="Test" component={Test} />
+          <Stack.Screen name="LandingScreen" component={LandingScreen} />
+          <Stack.Screen name="RoleSelectScreen" component={RoleSelectScreen} />
+          <Stack.Screen name="DetailsScreen" component={DetailsScreen} />
+          <Stack.Screen name="SuccessScreen" component={SuccessScreen} />
+          <Stack.Screen name="MyVideoScreen" component={MyVideoScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+      </OnboardingProvider>
+      <AppUpdateChecker />
+    </GestureHandlerRootView>
   );
 };
 

@@ -1,140 +1,65 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Text,
-  ActivityIndicator,
-  Modal,
-  TextInput,
-  ImageBackground,
-  Alert,
-  Platform,
-  StatusBar,
+  View, StyleSheet, TouchableOpacity, TouchableWithoutFeedback,
+  Text, ActivityIndicator, Modal, TextInput,
+  Alert, Platform, StatusBar, SafeAreaView,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Header from './header';
 import Video from 'react-native-video';
-import { BlurView } from "@react-native-community/blur";
+import LinearGradient from 'react-native-linear-gradient';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import apiClient from './api';
 
-// --- Reusable API Service Object ---
-// The fetchProfilePic function has been removed.
+const INK = '#0B1623';
+
 const apiService = {
   fetchVideo: (userId) => apiClient.get(`/api/videos/user/${userId}`),
-  fetchTranscription: (videoId) => apiClient.get(`/api/videos/${videoId}/transcription`),
-  updateTranscription: (videoId, transcription) => apiClient.put(`/api/videos/${videoId}/transcription`, { transcription }),
+  updateTranscription: (userId, transcription) =>
+    apiClient.put(`/api/videos/${userId}/transcription`,
+      { transcription },
+      { headers: { 'Content-Type': 'application/json' } }
+    ),
 };
 
-// --- Child Components (Unchanged) ---
 const VideoPlayer = memo(({ uri }) => (
-  <View style={styles.video.container}>
+  <View style={styles.videoWrap}>
     <Video
       source={{ uri }}
-      style={styles.video.player}
-      resizeMode="contain"
-      controls={true}
+      style={StyleSheet.absoluteFill}
+      resizeMode="cover"
+      controls
     />
   </View>
 ));
 
-const ActionButtons = memo(({ onTranscriptionPress, onDonePress }) => (
-  <View style={styles.buttons.container}>
-    <TouchableOpacity style={styles.buttons.button} onPress={onTranscriptionPress}>
-      <Text style={styles.buttons.text}>Check Transcription</Text>
-    </TouchableOpacity>
-    <TouchableOpacity style={styles.buttons.button} onPress={onDonePress}>
-      <Text style={styles.buttons.text}>Done</Text>
-    </TouchableOpacity>
-  </View>
-));
-
-const TranscriptionModal = memo(({ visible, transcription, onUpdate, onClose, onTextChange, currentText }) => (
-  <Modal visible={visible} animationType="slide" transparent>
-    <View style={styles.modal.background}>
-      <View style={styles.modal.glassContainer}>
-        <BlurView style={styles.modal.blurView} blurType="light" blurAmount={20} />
-        <Text style={styles.modal.title}>Transcription</Text>
-        <TextInput
-          value={currentText}
-          onChangeText={onTextChange}
-          style={styles.modal.input}
-          multiline
-          placeholder="Enter transcription..."
-          placeholderTextColor="rgba(0, 0, 0, 0.4)"
-        />
-        <View style={styles.modal.buttonContainer}>
-          <TouchableOpacity style={styles.buttons.button} onPress={onUpdate}>
-            <Text style={styles.buttons.text}>Update</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.buttons.button} onPress={onClose}>
-            <Text style={styles.buttons.text}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  </Modal>
-));
-
-// --- Main Component ---
 const TranscribeScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const [user, setUser] = useState({ firstName: '', industry: '', userId: null });
+  const [user, setUser] = useState({ userId: null });
   const [videoData, setVideoData] = useState({ uri: null, transcription: '', id: null, hasVideo: false });
   const [loading, setLoading] = useState(true);
-  const [profileImage, setProfileImage] = useState(null);
   const [isModalVisible, setModalVisible] = useState(false);
   const [newTranscription, setNewTranscription] = useState('');
 
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        // Fetch all necessary data from AsyncStorage at the same time
-        const [userId, firstName, industry, cachedProfileImage] = await Promise.all([
-          AsyncStorage.getItem('userId'),
-          AsyncStorage.getItem('firstName'),
-          AsyncStorage.getItem('industry'),
-          AsyncStorage.getItem('cachedProfileImage') // Get profile pic from storage
-        ]);
+        const userId = await AsyncStorage.getItem('userId');
+        if (!userId) throw new Error('User not found');
+        setUser({ userId });
 
-        if (!userId) {
-          throw new Error("User not found in storage");
-        }
-
-        // Set user data and profile image from storage
-        setUser({ userId, firstName, industry });
-        if (cachedProfileImage) {
-          setProfileImage(cachedProfileImage);
-        }
-
-        // Now, handle the video data
         if (route.params?.videos?.length > 0) {
-          const newVideo = route.params.videos[0];
-          setVideoData({
-            uri: newVideo.url,
-            hasVideo: true,
-            id: newVideo.id,
-            transcription: newVideo.transcription || '',
-          });
+          const v = route.params.videos[0];
+          setVideoData({ uri: v.url, hasVideo: true, id: v.id, transcription: v.transcription || '' });
         } else {
-          // Fallback to fetching the user's main video
-          const videoRes = await apiService.fetchVideo(userId);
-          if (videoRes.data && videoRes.data.videoUrl) {
-            setVideoData({
-              uri: videoRes.data.videoUrl,
-              hasVideo: true,
-              id: videoRes.data.videoId,
-              transcription: videoRes.data.transcription || '',
-            });
-          } else {
-            setVideoData(prev => ({ ...prev, hasVideo: false }));
+          const res = await apiService.fetchVideo(userId);
+          if (res.data?.videoUrl) {
+            setVideoData({ uri: res.data.videoUrl, hasVideo: true, id: res.data.videoId, transcription: res.data.transcription || '' });
           }
         }
-      } catch (error) {
-        console.error("Failed to load essential data:", error);
-        Alert.alert('Error', 'Could not load user data. Please log in again.');
+      } catch {
+        Alert.alert('Error', 'Could not load video data.');
       } finally {
         setLoading(false);
       }
@@ -142,232 +67,193 @@ const TranscribeScreen = () => {
     loadInitialData();
   }, [route.params]);
 
-  const handleFetchTranscription = useCallback(async () => {
-    if (!videoData.id) {
-      Alert.alert('Error', 'No video ID available');
-      return;
-    }
-    setLoading(true);
+  const handleOpenTranscript = useCallback(() => {
+    setNewTranscription(videoData.transcription || '');
+    setModalVisible(true);
+  }, [videoData.transcription]);
+
+  const handleSaveTranscription = useCallback(async () => {
+    if (!user.userId) return;
     try {
-      console.log('Fetching transcription for video ID:', videoData.id);
-      const response = await apiService.fetchTranscription(videoData.id);
-      console.log('Transcription response:', response.data);
-
-      if (response.data.transcription) {
-        const transcriptionText = response.data.transcription;
-        setVideoData(prev => ({ ...prev, transcription: transcriptionText }));
-        setNewTranscription(transcriptionText);
-        setModalVisible(true);
-      } else {
-        // If no transcription exists, allow user to create one
-        setNewTranscription(videoData.transcription || '');
-        setModalVisible(true);
-      }
-    } catch (error) {
-      console.error('Failed to fetch transcription:', error);
-      console.error('Error response:', error.response?.data);
-      // Still open modal to allow creating new transcription
-      setNewTranscription(videoData.transcription || '');
-      setModalVisible(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [videoData.id, videoData.transcription]);
-
-  const handleUpdateTranscription = useCallback(async () => {
-    if (!videoData.id) {
-      Alert.alert('Error', 'No video ID available');
-      return;
-    }
-
-    if (!newTranscription || newTranscription.trim() === '') {
-      Alert.alert('Error', 'Transcription cannot be empty');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      console.log('Updating transcription for video ID:', videoData.id);
-      console.log('New transcription:', newTranscription);
-
-      const response = await apiService.updateTranscription(videoData.id, newTranscription);
-      console.log('Update response:', response.data);
-
+      await apiService.updateTranscription(user.userId, newTranscription);
       setVideoData(prev => ({ ...prev, transcription: newTranscription }));
       setModalVisible(false);
-      Alert.alert('Success', 'Transcription updated successfully!');
-    } catch (error) {
-      console.error('Error updating transcription:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to update transcription';
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setLoading(false);
+      Alert.alert('Saved', 'Transcription updated.');
+    } catch {
+      Alert.alert('Error', 'Failed to update transcription.');
     }
-  }, [videoData.id, newTranscription]);
+  }, [user.userId, newTranscription]);
 
   if (loading) {
     return (
-      <View style={styles.page.centered}>
+      <View style={styles.loadingWrap}>
         <ActivityIndicator size="large" color="#fff" />
       </View>
     );
   }
 
   return (
-    <View style={styles.page.container}>
-      <Header
-        profile={profileImage}
-        userName={user.firstName}
-        jobOption={user.industry}
-      />
-      <ImageBackground
-        source={require('./assets/login.jpg')}
-        style={styles.page.imageBackground}>
-        <View style={styles.page.contentContainer}>
-          {videoData.hasVideo && videoData.uri ? (
-            <>
-              <VideoPlayer uri={videoData.uri} />
-              <ActionButtons
-                onTranscriptionPress={handleFetchTranscription}
-                onDonePress={() => navigation.navigate('home1')}
-              />
-            </>
-          ) : (
-            <View style={styles.page.centered}>
-              <Text style={styles.page.noVideoText}>No video available.</Text>
-            </View>
-          )}
+    <LinearGradient colors={['#03152A', '#0B2138', '#1A3550']} style={styles.flex}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={styles.flex}>
+
+        {/* Top chrome */}
+        <View style={styles.topChrome}>
+          <TouchableOpacity
+            style={styles.glassBtn}
+            onPress={() => navigation.navigate('HomeScreen')}
+            activeOpacity={0.8}>
+            <MaterialIcons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.wezumeBadge}>
+            <MaterialIcons name="mic" size={13} color="#fff" />
+            <Text style={styles.wezumeBadgeText}>my take</Text>
+          </View>
         </View>
-      </ImageBackground>
-      <TranscriptionModal
-        visible={isModalVisible}
-        transcription={videoData.transcription}
-        currentText={newTranscription}
-        onTextChange={setNewTranscription}
-        onUpdate={handleUpdateTranscription}
-        onClose={() => setModalVisible(false)}
-      />
-    </View>
+
+        {/* Video */}
+        {videoData.hasVideo && videoData.uri ? (
+          <VideoPlayer uri={videoData.uri} />
+        ) : (
+          <View style={styles.noVideoWrap}>
+            <MaterialIcons name="videocam-off" size={52} color="rgba(255,255,255,0.35)" />
+            <Text style={styles.noVideoText}>No video available</Text>
+          </View>
+        )}
+
+        {/* Bottom bar */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={handleOpenTranscript} activeOpacity={0.8}>
+            <MaterialIcons name="edit" size={18} color="#fff" />
+            <Text style={styles.secondaryBtnText}>Edit Transcript</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.navigate('HomeScreen')} activeOpacity={0.88}>
+            <LinearGradient
+              colors={['#FFC93A', '#FF9F43']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={styles.primaryBtnGradient}>
+              <Text style={styles.primaryBtnText}>Go to Home →</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+      </SafeAreaView>
+
+      {/* Transcript modal — bottom sheet */}
+      <Modal visible={isModalVisible} animationType="slide" transparent>
+        <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Edit Transcript</Text>
+                <TextInput
+                  value={newTranscription}
+                  onChangeText={setNewTranscription}
+                  style={styles.modalInput}
+                  multiline
+                  placeholder="Enter transcription…"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                  textAlignVertical="top"
+                />
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={styles.modalCancel} onPress={() => setModalVisible(false)} activeOpacity={0.8}>
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalSave} onPress={handleSaveTranscription} activeOpacity={0.88}>
+                    <LinearGradient
+                      colors={['#FFC93A', '#FF9F43']}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                      style={styles.modalSaveGradient}>
+                      <Text style={styles.modalSaveText}>Save</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </LinearGradient>
   );
 };
 
-// --- Styles (Unchanged) ---
 const styles = StyleSheet.create({
-  page: {
-    container: {
-      flex: 1,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-      backgroundColor: '#000'
-    },
-    imageBackground: {
-      flex: 1,
-    },
-    contentContainer: {
-      flex: 1,
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 40,
-    },
-    centered: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    noVideoText: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: '#ffffff',
-    },
+  flex: { flex: 1 },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B2138' },
+  topChrome: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 12 : 0,
+    paddingBottom: 12,
   },
-  video: {
-    container: {
-      width: '90%',
-      height: '85%',
-      backgroundColor: '#000',
-      borderRadius: 15,
-      overflow: 'hidden',
-      elevation: 10,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 5,
-      borderColor: '#ffffff',
-      borderWidth: 1,
-    },
-    player: {
-      width: '100%',
-      height: '100%',
-    },
+  glassBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  buttons: {
-    container: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      width: '90%',
-      gap: 15,
-      elevation: 5,
-    },
-    button: {
-      backgroundColor: '#2e80d8',
-      paddingVertical: 12,
-      paddingHorizontal: 25,
-      borderRadius: 25,
-      elevation: 5,
-    },
-    text: {
-      color: '#fff',
-      textAlign: 'center',
-      fontSize: 20,
-      fontWeight: 'bold',
-    },
+  wezumeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(30,155,215,0.85)',
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
-  modal: {
-    background: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    glassContainer: {
-      width: '95%',
-      borderRadius: 20,
-      overflow: 'hidden',
-      borderColor: 'rgba(255, 255, 255, 0.5)',
-      borderWidth: 1.5,
-    },
-    blurView: {
-      position: 'absolute',
-      top: 0, left: 0, bottom: 0, right: 0,
-    },
-    title: {
-      color: '#000',
-      fontWeight: 'bold',
-      fontSize: 30,
-      marginBottom: '5%',
-      marginTop: '5%',
-      textAlign: 'center',
-    },
-    input: {
-      width: '100%',
-      minHeight: 150,
-      backgroundColor: 'rgba(255, 255, 255, 0.5)',
-      borderRadius: 10,
-      padding: 15,
-      color: '#000',
-      fontSize: 16,
-      textAlignVertical: 'top',
-    },
-    buttonContainer: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      width: '100%',
-      marginTop: '5%',
-      marginBottom: '5%',
-      gap: 20,
-    },
+  wezumeBadgeText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  videoWrap: {
+    flex: 1, marginHorizontal: 16, borderRadius: 18,
+    overflow: 'hidden', backgroundColor: '#000',
   },
+  noVideoWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  noVideoText: { color: 'rgba(255,255,255,0.45)', fontSize: 16 },
+  bottomBar: {
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: 16, paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+  },
+  secondaryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    height: 48, paddingHorizontal: 16, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+  },
+  secondaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  primaryBtn: { flex: 1 },
+  primaryBtnGradient: {
+    height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#FFC93A', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35, shadowRadius: 10, elevation: 5,
+  },
+  primaryBtnText: { color: INK, fontSize: 15, fontWeight: '800' },
+  // Modal
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
+  modalCard: {
+    backgroundColor: '#0F2438',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingTop: 12,
+    borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  modalHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignSelf: 'center', marginBottom: 16,
+  },
+  modalTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 16 },
+  modalInput: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
+    padding: 14, color: '#fff', fontSize: 15, minHeight: 140, marginBottom: 16,
+  },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  modalCancel: {
+    height: 48, paddingHorizontal: 20, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  modalCancelText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  modalSave: { flex: 1 },
+  modalSaveGradient: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  modalSaveText: { color: INK, fontSize: 15, fontWeight: '800' },
 });
 
 export default TranscribeScreen;
