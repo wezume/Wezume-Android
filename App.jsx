@@ -41,6 +41,7 @@ import LandingScreen from './src/template/LandingScreen';
 import RoleSelectScreen from './src/template/RoleSelectScreen';
 import DetailsScreen from './src/template/DetailsScreen';
 import SuccessScreen from './src/template/SuccessScreen';
+import MyVideoScreen from './src/template/MyVideoScreen';
 import { OnboardingProvider } from './src/template/OnboardingContext';
 const Stack = createNativeStackNavigator();
 
@@ -245,6 +246,7 @@ const App = () => {
           <Stack.Screen name="RoleSelectScreen" component={RoleSelectScreen} />
           <Stack.Screen name="DetailsScreen" component={DetailsScreen} />
           <Stack.Screen name="SuccessScreen" component={SuccessScreen} />
+          <Stack.Screen name="MyVideoScreen" component={MyVideoScreen} />
         </Stack.Navigator>
       </NavigationContainer>
       </OnboardingProvider>

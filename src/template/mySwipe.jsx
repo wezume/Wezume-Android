@@ -11,8 +11,8 @@ import {
   BackHandler,
   Dimensions,
   ActivityIndicator,
-  Platform,
-  StatusBar,
+  Platform, // Import Platform
+  StatusBar, // Import StatusBar
 } from 'react-native';
 import Video from 'react-native-video';
 import { useIsFocused, useRoute, useNavigation } from '@react-navigation/native';
@@ -25,30 +25,26 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-// ❌ REMOVED: import PlayIcon from 'react-native-vector-icons/Ionicons';
-// ❌ REMOVED: import HeartIcon from 'react-native-vector-icons/AntDesign';
-// ❌ REMOVED: import BrokenHeartIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Ant from 'react-native-vector-icons/AntDesign';
+import Shares from 'react-native-vector-icons/Entypo';
+import Like from 'react-native-vector-icons/Foundation';
+import Score from 'react-native-vector-icons/MaterialCommunityIcons';
+import Phone from 'react-native-vector-icons/FontAwesome6';
+import Whatsapp from 'react-native-vector-icons/Entypo';
+import PlayIcon from 'react-native-vector-icons/Ionicons';
+import HeartIcon from 'react-native-vector-icons/AntDesign';
+import BrokenHeartIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LinearGradient from 'react-native-linear-gradient';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import apiClient from './api';
 
-const ICON_MAP = {
-  ARROW_LEFT: 'arrow-back',
-  HEART_RED: 'favorite',
-  HEART_WHITE: 'favorite-border',
-  SHARE_ARROW: 'share',
-  PLAY: 'play-arrow',
-  PAUSE: 'pause',
-  HEART_BROKEN: 'heart-broken',
-  STOPWATCH: 'timer', // Assuming 'timer' for stopwatch
-  PHONE: 'phone',
-  EMAIL: 'email',
-};
-
 const { height: windowHeight } = Dimensions.get('window');
+
+// --- Placeholder for BASE_URL (Assumed from previous context) ---
+const BASE_URL = 'https://app.wezume.in'; 
+
 
 // --- Reusable Animated Icon Button Component (Unchanged) ---
 const AnimatedIconButton = ({ onPress, children }) => {
@@ -72,20 +68,21 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
   const [error, setError] = useState(null);
   const [subtitles, setSubtitles] = useState([]);
   const [currentTime, setCurrentTime] = useState(0);
-  const { id, uri, profileImage, firstName, email, phoneNumber, thumbnail, userId: videoOwnerId } = item;
+  const { id, uri, profileImage, firstName, email, phoneNumber, thumbnail, userId: videoOwnerId } = item; 
   const navigation = useNavigation();
 
   const [likeCount, setLikeCount] = useState(0);
   const [totalScore, setTotalScore] = useState(0);
 
   const playPauseOpacity = useSharedValue(0);
-  const largeLikeHeartScale = useSharedValue(0);
-  const largeLikeHeartOpacity = useSharedValue(0);
+  const likeHeartScale = useSharedValue(0);
+  const likeHeartOpacity = useSharedValue(0);
   const dislikeHeartScale = useSharedValue(0);
   const dislikeHeartOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (isActive) {
+      // Reset state for the new video
       setIsLoading(true);
       setError(null);
       setLikeCount(0);
@@ -148,36 +145,30 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
   };
 
   const handleLikePress = () => {
-    const wasLiked = isLiked;
-    setLikeCount(prev => prev + (wasLiked ? -1 : 1));
+    const currentlyLiked = isLiked;
+    setLikeCount(prev => prev + (currentlyLiked ? -1 : 1));
     onLike(id);
-
-    if (wasLiked) {
-      // Reset and animate dislike - faster timing
-      dislikeHeartScale.value = 0;
-      dislikeHeartOpacity.value = 1;
-      dislikeHeartScale.value = withTiming(1, { duration: 280 }, (finished) => {
-        if (finished) {
-          dislikeHeartOpacity.value = withTiming(0, { duration: 280 });
-          dislikeHeartScale.value = withTiming(0, { duration: 280 });
-        }
-      });
-    } else {
-      // Reset and animate like - faster timing
-      largeLikeHeartScale.value = 0;
-      largeLikeHeartOpacity.value = 1;
-      largeLikeHeartScale.value = withTiming(1, { duration: 280 }, (finished) => {
-        if (finished) {
-          largeLikeHeartOpacity.value = withTiming(0, { duration: 280 });
-          largeLikeHeartScale.value = withTiming(0, { duration: 280 });
-        }
-      });
-    }
   };
 
   const doubleTapGesture = Gesture.Tap()
     .numberOfTaps(2)
     .onStart(() => {
+      // --- FIXED: Heart Animation Logic for Double Tap ---
+      // Determine which heart to animate based on current like status
+      const targetScale = isLiked ? dislikeHeartScale : likeHeartScale;
+      const targetOpacity = isLiked ? dislikeHeartOpacity : likeHeartOpacity;
+
+      targetScale.value = withSpring(1.5, { damping: 10, stiffness: 200 }); // Pop-out effect
+      targetOpacity.value = withTiming(1, { duration: 100 }); // Fade in
+
+      // Fade out and reset after a delay
+      targetOpacity.value = withDelay(
+        300,
+        withTiming(0, { duration: 300 }, () => {
+          targetScale.value = 0; // Reset scale after fade out
+        })
+      );
+      // --- END FIXED ANIMATION LOGIC ---
       runOnJS(handleLikePress)();
     });
 
@@ -190,37 +181,71 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
   const currentSubtitle = subtitles.find(sub => currentTime >= sub.startTime && currentTime <= sub.endTime)?.text || '';
 
   const handleShare = useCallback(async () => {
-    if (!thumbnail) return Alert.alert('Error', 'Thumbnail is not available.');
-
-    const localThumbnailPath = `${RNFS.CachesDirectoryPath}/share_thumbnail_${Date.now()}.jpg`;
-
-    try {
-      await RNFS.downloadFile({ fromUrl: thumbnail, toFile: localThumbnailPath }).promise;
-      await Share.open({
-        title: 'Share User Video',
-        message: `Check out this video from ${firstName} on Wezume!`,
-        url: `file://${localThumbnailPath}`,
-      });
-    } catch (error) {
-      if (error.code !== 'ECANCELLED') {
-        Alert.alert('Error', 'Could not share the video.');
-      }
+    if (!thumbnail || !firstName || !uri || !id) {
+        Alert.alert('Error', 'Cannot share video at this time. Missing data.');
+        return;
     }
-  }, [thumbnail, firstName]);
+    
+    try {
+      const thumbnailUrl = thumbnail;
+      const localThumbnailPath = `${RNFS.CachesDirectoryPath}/thumbnail.jpg`;
+      
+      const downloadResult = await RNFS.downloadFile({
+        fromUrl: thumbnailUrl,
+        toFile: localThumbnailPath,
+      }).promise;
+
+      if (downloadResult.statusCode === 200) {
+        const shareOptions = {
+          title: 'Share User Video',
+          message: `Check out this video shared by ${firstName}\n\n${BASE_URL}/api/users/share?target=app://api/videos/user/${uri}/${id}`,
+          url: `file://${localThumbnailPath}`,
+        };
+
+        await Share.open(shareOptions);
+      } else {
+        console.error('Failed to download the thumbnail. Status code:', downloadResult.statusCode);
+        Alert.alert('Error', 'Unable to download the thumbnail for sharing.');
+      }
+    } catch (error) {
+      console.error('Error sharing video:', error);
+      Alert.alert('Error', 'Error occurred during sharing.');
+    }
+  }, [thumbnail, firstName, uri, id]); 
+
+  const handleCall = () => {
+    if (phoneNumber) {
+      const url = `tel:${phoneNumber}`;
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Phone calls are not supported on this device.');
+        }
+      });
+    } else {
+      Alert.alert('Info', 'No phone number available for this user.');
+    }
+  };
+
+  const handleEmail = () => {
+    if (email) {
+      const url = `mailto:${email}`;
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Email is not supported on this device.');
+        }
+      });
+    } else {
+      Alert.alert('Info', 'No email address available for this user.');
+    }
+  };
 
   const playPauseStyle = useAnimatedStyle(() => ({ opacity: playPauseOpacity.value }));
-
-  const animatedLikeHeartStyle = useAnimatedStyle(() => ({
-    opacity: largeLikeHeartOpacity.value,
-    transform: [{ scale: largeLikeHeartScale.value }]
-  }));
-
-  const animatedDislikeHeartStyle = useAnimatedStyle(() => ({
-    opacity: dislikeHeartOpacity.value,
-    transform: [{ scale: dislikeHeartScale.value }]
-  }));
-
-  const likeIcon = isLiked ? ICON_MAP.HEART_RED : ICON_MAP.HEART_WHITE;
+  const animatedLikeHeartStyle = useAnimatedStyle(() => ({ opacity: likeHeartOpacity.value, transform: [{ scale: likeHeartScale.value }] }));
+  const animatedDislikeHeartStyle = useAnimatedStyle(() => ({ opacity: dislikeHeartOpacity.value, transform: [{ scale: dislikeHeartScale.value }] }));
 
   return (
     <GestureDetector gesture={doubleTapGesture}>
@@ -255,26 +280,19 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleTogglePlay} activeOpacity={1} />
 
         <Animated.View style={[styles.playPauseOverlay, playPauseStyle]}>
-          <MaterialIcons
-            name={isPaused ? ICON_MAP.PLAY : ICON_MAP.PAUSE}
-            size={100}
-            color="rgba(255, 255, 255, 0.7)"
-          />
+          <PlayIcon name={isPaused ? "play-circle" : "pause-circle"} size={80} color="rgba(255, 255, 255, 0.7)" />
         </Animated.View>
-
-        {/* Like animation */}
         <Animated.View style={[styles.heartAnimationContainer, animatedLikeHeartStyle]}>
-          <MaterialIcons name="favorite" size={220} color="#FF005E" />
+          <HeartIcon name="heart" size={100} color="white" />
         </Animated.View>
-        {/* Dislike animation */}
         <Animated.View style={[styles.heartAnimationContainer, animatedDislikeHeartStyle]}>
-          <MaterialIcons name="heart-broken" size={220} color="#666" />
+          <BrokenHeartIcon name="heart-broken" size={100} color="white" />
         </Animated.View>
 
         <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.6)']} style={styles.overlay}>
           <View style={styles.topControls}>
             <AnimatedIconButton onPress={() => navigation.goBack()}>
-              <MaterialIcons name={ICON_MAP.ARROW_LEFT} size={28} color="#fff" />
+              <Ant name={'arrowleft'} size={24} color={'#fff'} />
             </AnimatedIconButton>
           </View>
           <View style={styles.bottomControls}>
@@ -289,15 +307,6 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
                 <Text style={styles.userName}>{firstName}</Text>
               </View>
             </View>
-            <View style={styles.rightColumn}>
-              <AnimatedIconButton onPress={handleLikePress}>
-                <MaterialIcons name={likeIcon} size={28} color={isLiked ? '#FF005E' : '#fff'} />
-                <Text style={styles.iconText}>{likeCount}</Text>
-              </AnimatedIconButton>
-              <AnimatedIconButton onPress={handleShare}>
-                <MaterialIcons name={ICON_MAP.SHARE_ARROW} size={28} color="#fff" />
-              </AnimatedIconButton>
-            </View>
           </View>
         </LinearGradient>
       </View>
@@ -305,7 +314,7 @@ const VideoPlayer = memo(({ item, isActive, onLike, isLiked }) => {
   );
 });
 
-// --- HomeSwipe Component (Unchanged) ---
+// --- HomeSwipe Component (Container) ---
 const HomeSwipe = () => {
   const route = useRoute();
   const navigation = useNavigation();
@@ -367,7 +376,7 @@ const HomeSwipe = () => {
       item={item}
       isActive={isFocused && index === activeVideoIndex}
       onLike={handleLike}
-      isLiked={!!likedStatus[item.id]}
+      isLiked={!!likedStatus[item.id]} // Pass the boolean liked status
     />
   ), [isFocused, activeVideoIndex, handleLike, likedStatus]);
 
@@ -427,7 +436,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 20,
   },
-  transcriptionContainer: { backgroundColor: 'rgba(0, 0, 0, 0.5)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 10, alignSelf: 'center', marginBottom: '10%' },
+  transcriptionContainer: { backgroundColor: 'rgba(0, 0, 0, 0.5)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 10, alignSelf: 'flex-start', marginBottom: '10%' },
   transcriptionText: { color: '#fff', fontSize: 16, fontWeight: '500' },
   playPauseOverlay: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
   heartAnimationContainer: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
