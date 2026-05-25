@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
-import { BlurView } from '@react-native-community/blur';
 import Video from 'react-native-video';
 import Svg, { Circle } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -183,7 +182,10 @@ const CameraPage = () => {
     setUploadProgress(0);
 
     const randomFileName = `${Date.now()}.mp4`;
-    const formattedUri = videoPath;
+    // Android XHR requires file:// scheme for local file URIs
+    const formattedUri = Platform.OS === 'android' && !videoPath.startsWith('file://')
+      ? `file://${videoPath}`
+      : videoPath;
 
     try {
       const formData = new FormData();
@@ -297,8 +299,8 @@ const CameraPage = () => {
         </View>
       )}
 
-      <Modal animationType="fade" visible={showPreview} transparent={true}>
-        <BlurView style={styles.modal.blurView} blurType="dark" blurAmount={10} />
+      <Modal animationType="fade" visible={showPreview} transparent={false} statusBarTranslucent>
+        <View style={[styles.modal.blurView, { backgroundColor: '#000' }]} />
         <View style={styles.modal.container}>
             <Text style={styles.modal.header}>Preview Video</Text>
             <View style={styles.modal.videoContainer}>
@@ -306,16 +308,16 @@ const CameraPage = () => {
             </View>
             <View style={styles.modal.buttonContainer}>
               <TouchableOpacity style={styles.modal.button} onPress={handleRedo}>
-                <BlurView style={styles.modal.buttonBlur} blurType="light" blurAmount={15}>
+                <View style={[styles.modal.buttonBlur, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
                     <Icon name="trash-can-outline" size={28} color="#FF5A5F" />
                     <Text style={[styles.modal.buttonText, {color: '#FF5A5F'}]}>Redo</Text>
-                </BlurView>
+                </View>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modal.button} onPress={handleUploadVideo}>
-                <BlurView style={styles.modal.buttonBlur} blurType="light" blurAmount={15}>
+                <View style={[styles.modal.buttonBlur, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
                     <Icon name="cloud-upload-outline" size={28} color="#00A699" />
                     <Text style={[styles.modal.buttonText, {color: '#00A699'}]}>Upload</Text>
-                </BlurView>
+                </View>
               </TouchableOpacity>
             </View>
         </View>
@@ -323,7 +325,7 @@ const CameraPage = () => {
 
       {isUploading && (
         <View style={styles.upload.overlay}>
-            <BlurView style={StyleSheet.absoluteFill} blurType="dark" blurAmount={15}/>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.88)' }]} />
             {uploadProgress < 100 ? (
                 <UploadProgressCircle progress={uploadProgress} />
             ) : (
