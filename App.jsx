@@ -9,7 +9,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Initial from './src/template/initialScreen';
 import LoginScreen from './src/template/LoginScreen';
 import SignupScreen from './src/template/SignupScreen';
-import HomeScreen from './src/template/HomeScreen';
+import MainTabs from './src/template/MainTabs';
+import EditProfileScreen from './src/template/EditProfileScreen';
 import home1 from './src/template/home1';
 import OnboardingScreen from './src/template/onboarding';
 import CameraScreen from './src/template/camera';
@@ -217,7 +218,7 @@ const App = () => {
           <Stack.Screen name="OnboardingScreen" component={OnboardingScreen} />
           <Stack.Screen name="LoginScreen" component={LoginScreen} />
           <Stack.Screen name="SignupScreen" component={SignupScreen} />
-          <Stack.Screen name="HomeScreen" component={HomeScreen} />
+          <Stack.Screen name="HomeScreen" component={MainTabs} />
           <Stack.Screen name="home1" component={home1} />
           <Stack.Screen name="CameraPage" component={CameraScreen} />
           <Stack.Screen name="profile" component={Profile} />
@@ -247,6 +248,7 @@ const App = () => {
           <Stack.Screen name="DetailsScreen" component={DetailsScreen} />
           <Stack.Screen name="SuccessScreen" component={SuccessScreen} />
           <Stack.Screen name="MyVideoScreen" component={MyVideoScreen} />
+          <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: false }} />
         </Stack.Navigator>
       </NavigationContainer>
       </OnboardingProvider>

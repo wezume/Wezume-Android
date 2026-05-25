@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, StatusBar, Image, Animated,
+  SafeAreaView, StatusBar, Image, Animated, Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 10,
+    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 4 : 10,
     marginBottom: 4,
   },
   wordmark: { height: 36, width: 126 },
