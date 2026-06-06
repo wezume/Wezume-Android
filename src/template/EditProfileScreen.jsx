@@ -39,18 +39,18 @@ const EXPERIENCE_CHIPS = [
 ];
 
 const INDUSTRY_CHIPS = [
-  { label: 'IT/ITES',       icon: 'computer' },
-  { label: 'Media',         icon: 'movie' },
-  { label: 'Hospitality',   icon: 'hotel' },
-  { label: 'Transport',     icon: 'flight' },
-  { label: 'Real Estate',   icon: 'business' },
-  { label: 'Healthcare',    icon: 'local-hospital' },
-  { label: 'BFSI',          icon: 'account-balance' },
-  { label: 'Education',     icon: 'school' },
-  { label: 'Startups',      icon: 'trending-up' },
-  { label: 'Manufacturing', icon: 'precision-manufacturing' },
-  { label: 'Retail',        icon: 'shopping-cart' },
-  { label: 'Others',        icon: 'category' },
+  { label: 'IT/ITES',       value: 'IT/ITES' },
+  { label: 'Media',         value: 'MEDIA & ENTERTAINMENT' },
+  { label: 'Hospitality',   value: 'HOSPITALITY' },
+  { label: 'Transport',     value: 'TRANSPORT & AVIATION' },
+  { label: 'Real Estate',   value: 'REAL ESTATE, INFRASTRUCTURE & CONSTRUCTION' },
+  { label: 'Healthcare',    value: 'HEALTHCARE & LIFE SCIENCE' },
+  { label: 'BFSI',          value: 'BFSI (BANKING, FINANCIAL SERVICE & INSURANCE)' },
+  { label: 'Education',     value: 'EDUCATION & EDTECH' },
+  { label: 'Startups',      value: 'STARTUPS' },
+  { label: 'Manufacturing', value: 'MANUFACTURING & LOGISTICS' },
+  { label: 'Retail',        value: 'CONSUMER GOODS, RETAIL & E-COMMERS' },
+  { label: 'Others',        value: 'OTHERS' },
 ];
 
 // Standard link types shown as chips; tap to reveal their input
@@ -146,13 +146,22 @@ const EditProfileScreen = () => {
         setCurrentRole(d.currentRole || d.currentDesignation || '');
         setCurrentEmployer(d.currentEmployer || d.companyName || '');
         setExperience(d.experience || '');
-        if (d.industry) setIndustry(d.industry.split(',')[0].trim());
-        setLinkValues({
-          linkedin:  d.linkedIn  || d.linkedin  || '',
-          github:    d.github    || '',
-          portfolio: d.portfolio || d.website   || '',
-          blog:      d.blog      || '',
-        });
+        if (d.industry) setIndustry(d.industry.trim());
+        // Parse combined links string "LinkedIn:url,GitHub:url,..." into individual fields
+        const parsedLinks = { linkedin: '', github: '', portfolio: '', blog: '' };
+        if (d.links) {
+          d.links.split(',').forEach(pair => {
+            const idx = pair.indexOf(':');
+            if (idx === -1) return;
+            const key = pair.slice(0, idx).trim().toLowerCase();
+            const val = pair.slice(idx + 1).trim();
+            if (key === 'linkedin') parsedLinks.linkedin = val;
+            else if (key === 'github') parsedLinks.github = val;
+            else if (key === 'portfolio') parsedLinks.portfolio = val;
+            else if (key === 'blog') parsedLinks.blog = val;
+          });
+        }
+        setLinkValues(parsedLinks);
       } catch (e) {
         console.error('EditProfile load:', e);
       } finally {
@@ -179,11 +188,18 @@ const EditProfileScreen = () => {
     }, 1500);
   }, [userId, selectedImage]);
 
+  const buildLinksString = (lv = linkValues) => {
+    const parts = [];
+    if (lv.linkedin)  parts.push(`LinkedIn:${lv.linkedin}`);
+    if (lv.github)    parts.push(`GitHub:${lv.github}`);
+    if (lv.portfolio) parts.push(`Portfolio:${lv.portfolio}`);
+    if (lv.blog)      parts.push(`Blog:${lv.blog}`);
+    return parts.join(',');
+  };
+
   const buildPayload = (overrides = {}) => ({
     education, currentRole, currentEmployer, experience, industry,
-    linkedIn: linkValues.linkedin, github: linkValues.github,
-    portfolio: linkValues.portfolio, blog: linkValues.blog,
-    otherLinks: otherLinks.map(o => o.value).filter(Boolean).join(','),
+    links: buildLinksString(),
     ...overrides,
   });
 
@@ -208,10 +224,7 @@ const EditProfileScreen = () => {
   const handleLinkChange = (key, value) => {
     const next = { ...linkValues, [key]: value };
     setLinkValues(next);
-    autoSave(buildPayload({
-      linkedIn: next.linkedin, github: next.github,
-      portfolio: next.portfolio, blog: next.blog,
-    }));
+    autoSave(buildPayload({ links: buildLinksString(next) }));
   };
 
   const addOtherLink = () => {
@@ -268,7 +281,7 @@ const EditProfileScreen = () => {
   const isFresher = experience === 'Fresher';
   const expLabel  = EXPERIENCE_CHIPS.find(c => c.value === experience)?.label;
   const eduLabel  = EDUCATION_CHIPS.find(c => c.value === education)?.label;
-  const indChip   = INDUSTRY_CHIPS.find(c => c.label === industry);
+  const indChip   = INDUSTRY_CHIPS.find(c => c.value === industry);
   const filledLinks = LINK_TYPES.filter(t => linkValues[t.key]).map(t => t.label);
   const linkSummary = filledLinks.length > 0 ? filledLinks.join(' · ') : null;
 
@@ -411,21 +424,14 @@ const EditProfileScreen = () => {
               <View style={styles.chipRow}>
                 {INDUSTRY_CHIPS.map(c => (
                   <TouchableOpacity
-                    key={c.label}
-                    style={[styles.chip, industry === c.label && { borderColor: WZ.purple, backgroundColor: `${WZ.purple}18` }]}
-                    onPress={() => handleIndustrySelect(c.label)}
+                    key={c.value}
+                    style={[styles.chip, industry === c.value && { borderColor: WZ.purple, backgroundColor: `${WZ.purple}18` }]}
+                    onPress={() => handleIndustrySelect(c.value)}
                     activeOpacity={0.7}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <MaterialIcons
-                        name={c.icon}
-                        size={13}
-                        color={industry === c.label ? WZ.purple : WZ.ink3}
-                      />
-                      <Text style={[styles.chipText, industry === c.label && { color: WZ.purple, fontWeight: '700' }]}>
-                        {c.label}
-                      </Text>
-                    </View>
+                    <Text style={[styles.chipText, industry === c.value && { color: WZ.purple, fontWeight: '700' }]}>
+                      {c.label}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
