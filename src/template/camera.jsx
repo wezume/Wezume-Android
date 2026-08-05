@@ -87,7 +87,11 @@ const CameraPage = () => {
     { videoResolution: { width: 854, height: 480 } },
     { fps: 24 },
   ]);
-  
+  // Only force 24fps if the selected format actually supports it — forcing an
+  // unsupported fps throws InvalidFpsError natively on Android, silently killing
+  // the recording (no onError handler) and dumping the user back on this screen.
+  const targetFps = format != null && format.minFps <= 24 && format.maxFps >= 24 ? 24 : undefined;
+
   useEffect(() => {
     if (!paramUserId) {
       AsyncStorage.getItem('userId').then(id => { if (id) setUserId(id); });
@@ -270,7 +274,7 @@ const CameraPage = () => {
         ref={cameraRef}
         device={device}
         format={format}
-        fps={24}
+        fps={targetFps}
         isActive={true}
         style={StyleSheet.absoluteFill}
         video={true}
