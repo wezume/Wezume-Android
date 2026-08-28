@@ -35,8 +35,10 @@ const VideoCard = memo(({ item, index, onPress, showScore }) => {
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    scale.value   = withDelay(index * 25, withTiming(1,   { duration: 180 }));
-    opacity.value = withDelay(index * 25, withTiming(1,   { duration: 180 }));
+    // Cap the stagger so later rows don't wait on a growing tail delay.
+    const delay = Math.min(index, 8) * 20;
+    scale.value   = withDelay(delay, withTiming(1, { duration: 140 }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 140 }));
   }, [index, scale, opacity]);
 
   const animStyle = useAnimatedStyle(() => ({
